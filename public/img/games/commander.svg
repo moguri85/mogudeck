@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 300" preserveAspectRatio="xMidYMid slice">
+<defs>
+<radialGradient id="g1" cx="80%" cy="0%" r="90%"><stop offset="0" stop-color="#7b5ea7" stop-opacity=".75"/><stop offset=".6" stop-color="#7b5ea7" stop-opacity="0"/></radialGradient>
+<radialGradient id="g2" cx="0%" cy="100%" r="80%"><stop offset="0" stop-color="#f47700" stop-opacity=".35"/><stop offset=".6" stop-color="#f47700" stop-opacity="0"/></radialGradient>
+<linearGradient id="fade" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#000" stop-opacity="0"/><stop offset="1" stop-color="#000" stop-opacity=".35"/></linearGradient>
+</defs>
+<rect width="600" height="300" fill="#1b1b1d"/>
+<rect width="600" height="300" fill="url(#g1)"/><rect width="600" height="300" fill="url(#g2)"/>
+<g transform="translate(460 150)"><circle r="62" fill="none" stroke="#b9a2e6" stroke-width="2" opacity=".6"/><circle r="40" fill="#2a2333" stroke="#b9a2e6" stroke-opacity=".5"/><circle cx="67.2" cy="67.2" r="16" fill="#2a2333" stroke="#f47700" stroke-width="2" opacity=".9"/><circle cx="-67.2" cy="67.2" r="16" fill="#2a2333" stroke="#f47700" stroke-width="2" opacity=".9"/><circle cx="-67.2" cy="-67.2" r="16" fill="#2a2333" stroke="#f47700" stroke-width="2" opacity=".9"/><circle cx="67.2" cy="-67.2" r="16" fill="#2a2333" stroke="#f47700" stroke-width="2" opacity=".9"/><path d="M-18 8 L-18 -10 L-8 0 L0 -16 L8 0 L18 -10 L18 8 Z" fill="#f47700" opacity=".9"/></g>
+<rect width="600" height="300" fill="url(#fade)"/>
+</svg>

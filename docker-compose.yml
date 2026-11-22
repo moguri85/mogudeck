@@ -1,0 +1,13 @@
+services:
+  torneos:
+    build: .
+    container_name: melee-torneos
+    restart: unless-stopped
+    env_file: .env
+    # Red del host: evita problemas de reenvío de puertos de Docker. Solo escucha en 127.0.0.1 (nginx delante).
+    network_mode: host
+    environment:
+      - PORT=3100
+      - HOST=127.0.0.1
+    volumes:
+      - ./data:/data

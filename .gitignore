@@ -1,0 +1,8 @@
+node_modules/
+data/
+data-dev/
+.env
+.impeccable/
+.claude/
+.agents/
+*.log

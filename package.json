@@ -1,0 +1,22 @@
+{
+  "name": "melee-tienda",
+  "version": "1.0.0",
+  "description": "Web de apoyo a torneos de Melee.gg para tiendas",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "mock": "node dev/mock-melee.js",
+    "dev": "MELEE_BASE_URL=http://localhost:4010 MELEE_CLIENT_ID=demo MELEE_CLIENT_SECRET=demo ADMIN_PASSWORD=admin12345 DATA_DIR=./data-dev node src/server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.2",
+    "qrcode": "^1.5.4"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "private": true
+}
