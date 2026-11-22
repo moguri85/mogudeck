@@ -1,0 +1,64 @@
+name: Desplegar en tager
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-tager
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: produccion
+    env:
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH || '/srv/www/moguri.es/melee-tienda' }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT || '22' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Comprobar sintaxis
+        run: |
+          for f in $(git ls-files 'src/*.js' 'src/**/*.js' 'public/*.js' 'dev/*.js'); do node --check "$f"; done
+
+      - name: Preparar SSH
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          if [ -n "${{ secrets.DEPLOY_KNOWN_HOSTS }}" ]; then
+            printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -p "$DEPLOY_PORT" "${{ secrets.DEPLOY_HOST }}" > ~/.ssh/known_hosts
+          fi
+          printf 'Host tager\n  HostName %s\n  User %s\n  Port %s\n  IdentityFile ~/.ssh/id_deploy\n  IdentitiesOnly yes\n' \
+            "${{ secrets.DEPLOY_HOST }}" "${{ secrets.DEPLOY_USER }}" "$DEPLOY_PORT" > ~/.ssh/config
+
+      - name: Empaquetar
+        # Solo lo versionado: .env, data/ y node_modules nunca salen del servidor
+        run: git archive --format=tar.gz -o app.tar.gz HEAD
+
+      - name: Subir y reconstruir
+        run: |
+          scp app.tar.gz tager:/tmp/mogudeck-${{ github.sha }}.tar.gz
+          ssh tager "DEPLOY_PATH='$DEPLOY_PATH' SHA='${{ github.sha }}' bash -s" <<'SH'
+          set -euo pipefail
+          SUDO=""; [ -w "$DEPLOY_PATH" ] || SUDO="sudo -n"
+          $SUDO mkdir -p "$DEPLOY_PATH"
+          $SUDO tar xzf "/tmp/mogudeck-$SHA.tar.gz" -C "$DEPLOY_PATH"
+          rm -f "/tmp/mogudeck-$SHA.tar.gz"
+          cd "$DEPLOY_PATH"
+          test -f .env || { echo "Falta $DEPLOY_PATH/.env"; exit 1; }
+          DC="docker-compose"; command -v docker-compose >/dev/null || DC="docker compose"
+          docker info >/dev/null 2>&1 || DC="sudo -n $DC"
+          $DC up -d --build
+          docker image prune -f >/dev/null 2>&1 || true
+          echo "$SHA" | $SUDO tee .deployed >/dev/null
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:3100/healthz >/dev/null 2>&1; then echo "OK: la web responde"; exit 0; fi
+            sleep 2
+          done
+          echo "La web no responde tras el despliegue"; $DC logs --tail=80; exit 1
+          SH
