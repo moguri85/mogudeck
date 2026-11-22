@@ -234,3 +234,6 @@ document.querySelectorAll('.undo-toast').forEach(t => document.body.appendChild(
   window.addEventListener('resize', replace);
   document.addEventListener('click', e => { if (!e.target.closest('details.pmenu')) closeAll(); });
 })();
+
+// Filtros en pastillas: en el móvil deja visible la opción elegida
+if (window.matchMedia('(max-width: 860px)').matches) document.querySelectorAll('.content .chips a.on').forEach(a => { const c = a.parentElement; c.scrollLeft = a.offsetLeft - (c.clientWidth - a.offsetWidth) / 2; });

@@ -1276,3 +1276,9 @@ a.stchip { text-decoration: none !important; }
 @keyframes mg-dust-hop { 0%, 70% { opacity: 0; transform: scale(.3); } 73% { opacity: .7; transform: scale(.6); } 100% { opacity: 0; transform: translateX(var(--dx)) translateY(-6px) scale(1.6); } }
 .cel.draw .mg-hop, .cel.draw .mg-shadow, .cel.draw .mg-tuft, .cel.draw .mg-arm, .cel.draw .mg-dust.hop { animation: none; }
 .mg-tuft { transform-origin: 132px 104px; animation: mg-ear-in .95s both, mg-ear 1.25s 1.05s infinite; --s: .8; }
+/* Torneos (admin): pills de juego con su color */
+.gchips a { display: inline-flex; align-items: center; gap: 6px; }
+.gchips a i { width: 9px; height: 9px; border-radius: 50%; background: var(--g); }
+.gchips a small { opacity: .6; font-variant-numeric: tabular-nums; }
+.gchips a.on i { box-shadow: 0 0 0 2px #fff; }
+@media (max-width: 860px) { .content .chips { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; } .content .chips a { flex: none; } }

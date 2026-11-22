@@ -128,15 +128,15 @@ r.get('/torneos', (req, res) => {
   if (status !== '') { sql += ' AND status = ?'; args.push(Number(status)); }
   sql += ' ORDER BY COALESCE(start_date, last_pair, first_seen) DESC LIMIT 300';
   const ts = db.prepare(sql).all(...args);
-  const games = db.prepare('SELECT DISTINCT game FROM tournaments').all().map(x => x.game);
+  const games = db.prepare('SELECT game, COUNT(*) n FROM tournaments GROUP BY game ORDER BY n DESC').all();
+  const total = games.reduce((a, g) => a + g.n, 0);
+  const qs = (k, v) => { const p = new URLSearchParams({ juego: game, estado: status, [k]: v }); for (const [a, b] of [...p]) if (b === '') p.delete(a); const q = p.toString(); return q ? '?' + q : '/admin/torneos'; };
+  const STATES = [[0, 'No publicado'], [1, 'Inscripción'], [2, 'En curso'], [4, 'Finalizado'], [3, 'Cancelado']];
   send(res, adminPage(req, 'Torneos', html`
-    <form class="filters" method="get">
-      <select name="juego" onchange="this.form.submit()"><option value="">Todos los juegos</option>
-        ${games.map(g => html`<option value="${g}" ${g === game ? 'selected' : ''}>${melee.gameInfo(g).label}</option>`)}</select>
-      <select name="estado" onchange="this.form.submit()"><option value="">Todos los estados</option>
-        ${[[0, 'No publicado'], [1, 'Inscripción'], [2, 'En curso'], [4, 'Finalizado'], [3, 'Cancelado']].map(([v, l]) =>
-    html`<option value="${v}" ${String(v) === status ? 'selected' : ''}>${l}</option>`)}</select>
-    </form>
+    <nav class="chips gchips" aria-label="Filtrar por juego"><a href="${qs('juego', '')}" class="${!game ? 'on' : ''}">Todos <small>${total}</small></a>
+      ${games.map(g => html`<a href="${qs('juego', g.game)}" class="${g.game === game ? 'on' : ''}" style="--g:${melee.gameInfo(g.game).color}"><i></i>${melee.gameInfo(g.game).short} <small>${g.n}</small></a>`)}</nav>
+    <nav class="chips" aria-label="Filtrar por estado"><a href="${qs('estado', '')}" class="${status === '' ? 'on' : ''}">Todos los estados</a>
+      ${STATES.map(([v, l]) => html`<a href="${qs('estado', String(v))}" class="${String(v) === status ? 'on' : ''}">${l}</a>`)}</nav>
     <div class="tablewrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Torneo</th><th>Juego</th><th>Estado</th><th class="num">Jugadores</th></tr></thead>
     <tbody>${ts.map(t => html`<tr class="${t.hidden ? 'dim' : ''}"><td class="nowrap">${fmtDay(t.start_date || t.last_pair)}</td>
       <td><a href="/admin/torneos/${t.id}">${t.name}</a>${t.hidden ? html` <small class="muted">(oculto)</small>` : ''}</td>
