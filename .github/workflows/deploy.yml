@@ -1,5 +1,7 @@
 name: Desplegar en tager
 
+# Solo despliega si el último commit del push lleva [deploy] en el mensaje,
+# o a mano desde la pestaña Actions (Run workflow).
 on:
   push:
     branches: [main]
@@ -11,6 +13,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy]')
     runs-on: ubuntu-latest
     environment: produccion
     env:
