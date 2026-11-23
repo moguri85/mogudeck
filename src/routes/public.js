@@ -89,7 +89,7 @@ r.get('/', (req, res) => {
   const hasCmd = db.prepare('SELECT COUNT(*) c FROM cmd_events WHERE public = 1').get().c > 0;
   // Agenda: torneos de Melee con inscripción + Commander por empezar
   const agenda = [
-    ...(game === 'commander' ? [] : data.upcomingTournaments(40).filter(t => !game || t.game === game).map(t => ({
+    ...(game === 'commander' ? [] : data.upcomingTournaments(400).filter(t => !game || t.game === game).map(t => ({
       href: `/t/${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), name: t.name, players: data.counts(t.id).total || 0,
       price: t.price_cents, cta: 'Inscribirme', fmt: (JSON.parse(t.formats || '[]')[0] || ''),
     }))),
@@ -100,6 +100,12 @@ r.get('/', (req, res) => {
       budget: e.budget_cents, bracket: e.bracket_max,
     }))),
   ].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  // Paginación de la agenda
+  const PER = 8;
+  const pages = Math.max(1, Math.ceil(agenda.length / PER));
+  const page = Math.min(Math.max(parseInt(req.query.pag, 10) || 1, 1), pages);
+  const agendaPage = agenda.slice((page - 1) * PER, page * PER);
+  const pageHref = n => `/?${new URLSearchParams({ ...(game ? { juego: game } : {}), ...(n > 1 ? { pag: n } : {}) })}#proximos`;
   const results = [
     ...(game === 'commander' ? [] : data.recentTournaments(12).filter(t => !game || t.game === game).map(t => {
       const sm = data.summary(t);
@@ -118,12 +124,16 @@ r.get('/', (req, res) => {
       ${cmdNow.map(e => { const sn = C.snapshot(e.id); return liveTile({ href: `/commander/${e.id}`, color: '#7b5ea7', label: 'Commander', name: e.name, round: sn.round, roundsTotal: sn.roundsPlanned, done: sn.done, total: sn.pods.length, end: sn.timerEnd, players: sn.players, final: sn.roundKind === 'final' }); })}
       ${live.map(t => { const sm = data.summary(t); const g = melee.gameInfo(t.game); return liveTile({ href: `/t/${t.id}`, color: g.color, label: g.short, name: t.name, round: sm.round, roundsTotal: sm.roundsTotal, done: sm.done, total: sm.total, end: sm.timerEnd, players: sm.players }); })}
     </div></section>` : ''}
-    <section><div class="sec-row"><h2 class="sec">Próximos torneos</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
-      ${agenda.length ? html`<div class="agenda">${agenda.map(a => html`<a class="arow" href="${a.href}" style="--g:${a.g.color}">
+    <section id="proximos"><div class="sec-row"><h2 class="sec">Próximos torneos${agenda.length > PER ? html` <small class="muted">${agenda.length}</small>` : ''}</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
+      ${agenda.length ? html`<div class="agenda">${agendaPage.map(a => html`<a class="arow" href="${a.href}" style="--g:${a.g.color}">
         ${dateTile(a.date)}
         <div class="a-info"><div class="a-top"><span class="gchip"><i></i>${a.g.short}</span>${a.fmt ? html`<span class="muted small">${a.fmt}</span>` : ''}${a.budget ? html`<span class="budgetchip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="budgetchip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
           <div class="a-name">${a.name}</div><div class="a-meta">${hour(a.date) ? html`${hour(a.date)} · ` : ''}${a.places ? `${a.players}/${a.places} plazas` : `${a.players} inscritos`}</div></div>
-        <div class="a-side">${a.price != null ? html`<span class="tcard-price">${money(a.price)}</span>` : ''}<span class="jbtn">${a.cta}</span></div></a>`)}</div>`
+        <div class="a-side">${a.price != null ? html`<span class="tcard-price">${money(a.price)}</span>` : ''}<span class="jbtn">${a.cta}</span></div></a>`)}</div>
+      ${pages > 1 ? html`<nav class="pager" aria-label="Páginas de próximos torneos">
+        ${page > 1 ? html`<a class="jbtn-outline" href="${pageHref(page - 1)}" rel="prev">← Anteriores</a>` : html`<span></span>`}
+        <span class="pg-n">${(page - 1) * PER + 1}–${Math.min(page * PER, agenda.length)} de ${agenda.length}</span>
+        ${page < pages ? html`<a class="jbtn-outline" href="${pageHref(page + 1)}" rel="next">Siguientes →</a>` : html`<span></span>`}</nav>` : ''}`
       : html`<p class="muted">No hay torneos con inscripción abierta ahora mismo.</p>`}
     </section>
     ${results.length ? html`<section><h2 class="sec">Últimos resultados</h2><div class="results">${results.map(x => html`<a class="rrow" href="${x.href}" style="--g:${x.g.color}">

@@ -1294,3 +1294,8 @@ a.stchip { text-decoration: none !important; }
 .vcmd.off { opacity: .45; } .vcmd.off span { text-decoration: line-through; }
 .vtable tr.vout td { opacity: .45; } .vtable tr.vout td.strong { text-decoration: line-through; }
 @media (prefers-reduced-motion: reduce) { .vsw i, .vsw i::after { transition: none; } }
+/* Próximos torneos: paginación */
+.pager { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; margin-top: 14px; }
+.pager > :last-child { justify-self: end; } .pager .jbtn-outline { min-height: 44px; display: inline-flex; align-items: center; }
+.pg-n { color: var(--muted); font-variant-numeric: tabular-nums; font-size: 14px; white-space: nowrap; }
+#proximos { scroll-margin-top: 90px; }
