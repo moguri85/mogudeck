@@ -142,14 +142,43 @@
     } catch (e) { /* nada */ }
   }
 
+  // Interruptores: no contar tierras básicas y/o el comandante (se recuerda en este navegador)
+  const opt = { basic: store.get('mt_vm_nobasic') === '1', cmd: store.get('mt_vm_nocmd') === '1' };
+  const isBasic = l => l.basic || BASIC.test(l.name);
+  const out_ = l => (opt.basic && isBasic(l)) || (opt.cmd && l.commander);
+  const shown = r => Math.round(r.lines.reduce((s, l) => s + (out_(l) ? 0 : l.total || 0), 0) * 100) / 100;
+  function totalHtml(r) {
+    const cmd = r.lines.filter(l => l.commander);
+    const v = shown(r), cut = v !== r.total;
+    const left = r.lines.reduce((s, l) => s + (out_(l) ? 0 : l.qty), 0);
+    const what = [opt.basic && r.lines.some(isBasic) ? 'tierras básicas' : '', opt.cmd && cmd.length ? 'comandante' : ''].filter(Boolean);
+    return `<div><span>${what.length ? 'Valor sin ' + what.join(' ni ') : 'Valor del mazo'}</span><b>${eur(v)}</b><small>${cut ? `${left} de ${r.cards} cartas · con todo: ${eur(r.total)}` : `${r.cards} cartas`} · impresión más barata de cada una${r.pricesAt ? ` · precios del ${new Date(r.pricesAt).toLocaleDateString('es-ES')}` : ''}</small></div>
+      ${cmd.length ? `<div class="vcmd ${opt.cmd ? 'off' : ''}">${cmd.map(c => c.img ? `<img src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy">` : '').join('')}<span>${esc(r.commander)}</span></div>` : ''}`;
+  }
+  function topHtml(r) {
+    const top = r.lines.filter(l => l.unit != null && !out_(l)).slice().sort((a, b) => b.total - a.total).slice(0, 10);
+    return top.map(l => `<a href="${esc(l.url || '#')}" target="_blank" rel="noopener" class="vcard">${l.img ? `<img src="${esc(l.img)}" alt="" loading="lazy">` : '<div class="noimg"></div>'}
+        <span>${esc(l.name)}</span><b>${eur(l.total)}</b>${l.qty > 1 ? `<small>${l.qty} × ${eur(l.unit)}</small>` : ''}</a>`).join('');
+  }
+  function switchesHtml(r) {
+    const hasB = r.lines.some(isBasic), hasC = r.lines.some(l => l.commander);
+    if (!hasB && !hasC) return '';
+    const sw = (id, on, label) => `<label class="vsw"><input type="checkbox" role="switch" id="${id}" ${on ? 'checked' : ''}><i aria-hidden="true"></i><span>${label}</span></label>`;
+    return `<div class="vswitches" role="group" aria-label="Qué contar">${hasB ? sw('vm-nobasic', opt.basic, 'Sin tierras básicas') : ''}${hasC ? sw('vm-nocmd', opt.cmd, 'Sin comandante') : ''}</div>`;
+  }
+  function refreshTotals() {
+    const r = lastResult;
+    document.getElementById('vm-total').innerHTML = totalHtml(r);
+    document.getElementById('vm-top').innerHTML = topHtml(r);
+    document.querySelectorAll('.vtable tr[data-i]').forEach(tr => tr.classList.toggle('vout', out_(r.lines[tr.dataset.i])));
+  }
+
   let autoSaved = false;
   function render() {
     const r = lastResult;
-    const top = r.lines.filter(l => l.unit != null).slice().sort((a, b) => b.total - a.total).slice(0, 10);
-    const cmd = r.lines.filter(l => l.commander);
     out.innerHTML = `
-      <div class="vtotal"><div><span>Valor del mazo</span><b>${eur(r.total)}</b><small>${r.cards} cartas · impresión más barata de cada una${r.pricesAt ? ` · precios del ${new Date(r.pricesAt).toLocaleDateString('es-ES')}` : ''}</small></div>
-        ${cmd.length ? `<div class="vcmd">${cmd.map(c => c.img ? `<img src="${esc(c.img)}" alt="${esc(c.name)}" loading="lazy">` : '').join('')}<span>${esc(r.commander)}</span></div>` : ''}</div>
+      <div class="vtotal" id="vm-total" aria-live="polite">${totalHtml(r)}</div>
+      ${switchesHtml(r)}
       ${legalNote(r)}
       ${bracketNote(r)}
       ${cmdNote(r)}
@@ -158,11 +187,10 @@
       ${r.missing.length ? `<div class="vwarn">No encontradas (${r.missing.length}): ${r.missing.map(esc).join(', ')}</div>` : ''}
       ${r.noPrice.length ? `<div class="vwarn">Sin precio en euros (${r.noPrice.length}): ${r.noPrice.map(esc).join(', ')}</div>` : ''}
       <h3 class="vh">Las más caras</h3>
-      <div class="vtop">${top.map(l => `<a href="${esc(l.url || '#')}" target="_blank" rel="noopener" class="vcard">${l.img ? `<img src="${esc(l.img)}" alt="" loading="lazy">` : '<div class="noimg"></div>'}
-        <span>${esc(l.name)}</span><b>${eur(l.total)}</b>${l.qty > 1 ? `<small>${l.qty} × ${eur(l.unit)}</small>` : ''}</a>`).join('')}</div>
+      <div class="vtop" id="vm-top">${topHtml(r)}</div>
       <h3 class="vh">Lista completa</h3>
       <div class="tablewrap"><table class="tbl vtable"><thead><tr><th class="num">Cant.</th><th>Carta</th><th>Edición más barata</th><th class="num">Precio</th><th class="num">Total</th></tr></thead><tbody>
-        ${r.lines.map(l => `<tr class="${l.commander ? 'cmdrow' : ''}"><td class="num">${l.qty}</td><td><a href="${esc(l.url || '#')}" target="_blank" rel="noopener">${esc(l.name)}</a>${l.from ? ` <small class="muted">(${esc(l.from)})</small>` : ''}${l.commander ? ' <span class="chip sm">Comandante</span>' : ''}</td>
+        ${r.lines.map((l, i) => `<tr data-i="${i}" class="${l.commander ? 'cmdrow' : ''} ${out_(l) ? 'vout' : ''}"><td class="num">${l.qty}</td><td><a href="${esc(l.url || '#')}" target="_blank" rel="noopener">${esc(l.name)}</a>${l.from ? ` <small class="muted">(${esc(l.from)})</small>` : ''}${l.commander ? ' <span class="chip sm">Comandante</span>' : ''}</td>
           <td class="muted small">${esc(l.setName || '')} ${l.set ? `(${esc(l.set.toUpperCase())})` : ''}</td><td class="num">${eur(l.unit)}</td><td class="num strong">${eur(l.total)}</td></tr>`).join('')}
       </tbody></table></div>
       <button class="jbtn-outline" id="vm-copy" style="margin-top:14px">Copiar resumen</button>`;
@@ -175,6 +203,10 @@
   }
 
   function bind() {
+    for (const [id, k, key] of [['vm-nobasic', 'basic', 'mt_vm_nobasic'], ['vm-nocmd', 'cmd', 'mt_vm_nocmd']]) {
+      const el = document.getElementById(id);
+      if (el) el.onchange = () => { opt[k] = el.checked; store.set(key, el.checked ? '1' : '0'); refreshTotals(); };
+    }
     const sv = document.getElementById('vm-save');
     if (sv) sv.onclick = async () => {
       const m = document.getElementById('vm-msg');
@@ -209,7 +241,8 @@
     const cp = document.getElementById('vm-copy');
     if (cp) cp.onclick = () => {
       const r = lastResult;
-      const txt = `Valor del mazo: ${eur(r.total)} (${r.cards} cartas)\n` + r.lines.slice(0, 10).map(l => `${l.qty} ${l.name} — ${eur(l.total)}`).join('\n');
+      const v = shown(r);
+      const txt = `Valor del mazo${v !== r.total ? ` (${[opt.basic ? 'sin básicas' : '', opt.cmd ? 'sin comandante' : ''].filter(Boolean).join(', ')})` : ''}: ${eur(v)} (${r.cards} cartas)\n` + r.lines.filter(l => !out_(l)).slice(0, 10).map(l => `${l.qty} ${l.name} — ${eur(l.total)}`).join('\n');
       navigator.clipboard && navigator.clipboard.writeText(txt).then(() => { cp.textContent = 'Copiado ✔'; });
     };
   }
