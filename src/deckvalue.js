@@ -18,9 +18,10 @@ const API = (process.env.SCRYFALL_URL || 'https://api.scryfall.com').replace(/\/
 const H = '^(?:\\/\\/\\s*|#+\\s*)?[\\[\\{\\*_]*\\s*';
 const TAIL = '\\s*[\\]\\}\\*_]*\\s*(?:\\(\\d+\\))?\\s*:?\\s*$';
 const CMD_HEAD = new RegExp(`${H}(?:commanders?|comandantes?|command\\s*zone|commander\\s*\\(s\\))${TAIL}`, 'i');
+const COMP_HEAD = new RegExp(`${H}(?:companions?|compa[ñn]eros?)${TAIL}`, 'i');
 const SIDE_HEAD = new RegExp(`${H}(?:sideboard|side|banquillo|reserva)${TAIL}`, 'i');
 const SKIP_HEAD = new RegExp(`${H}(?:maybeboard|maybe|considering|tokens?|fichas|acquireboard|wishlist|sideboard\\s*\\(maybe\\))${TAIL}`, 'i');
-const MAIN_HEAD = new RegExp(`${H}(?:deck|mazo|main|mainboard|main\\s*deck|maindeck|library|biblioteca|companions?|compa[ñn]eros?|creatures?|criaturas?|lands?|tierras?|instants?|instant[aá]neos?|sorcer(?:y|ies)|conjuros?|artifacts?|artefactos?|enchantments?|encantamientos?|planeswalkers?|battles?|batallas?|spells?|other|otros?)${TAIL}`, 'i');
+const MAIN_HEAD = new RegExp(`${H}(?:deck|mazo|main|mainboard|main\\s*deck|maindeck|library|biblioteca|creatures?|criaturas?|lands?|tierras?|instants?|instant[aá]neos?|sorcer(?:y|ies)|conjuros?|artifacts?|artefactos?|enchantments?|encantamientos?|planeswalkers?|battles?|batallas?|spells?|other|otros?)${TAIL}`, 'i');
 const TYPE_COUNT_HEAD = /^[A-Za-zÀ-ÿ' ]{3,30}\s*\(\d+\)\s*:?$/;
 const CMD_MARK = /\s*(\*cmdr\*|\[[^\]]*\bcommander\b[^\]]*\]|\(commander\)|#\s*!?commander\b|\s-\s*commander\s*$)/i;
 
@@ -33,12 +34,14 @@ function parseText(text) {
       if (any && !prevBlank) block++;
       // La sección del comandante acaba en la primera línea en blanco tras sus cartas
       if (section === 'commander' && out.length && out[out.length - 1].commander) section = 'main';
+      if (section === 'companion' && out.length && out[out.length - 1].companion) section = 'main';
       prevBlank = true; continue;
     }
     // Comentarios: «// Commander» abre sección; cualquier otro comentario cierra la del comandante y se ignora
-    if (/^(\/\/|#)/.test(line) && !CMD_HEAD.test(line) && !SIDE_HEAD.test(line) && !MAIN_HEAD.test(line)) { if (section === 'commander') section = 'main'; continue; }
+    if (/^(\/\/|#)/.test(line) && !CMD_HEAD.test(line) && !SIDE_HEAD.test(line) && !MAIN_HEAD.test(line) && !COMP_HEAD.test(line)) { if (section === 'commander') section = 'main'; continue; }
     if (CMD_HEAD.test(line)) { section = 'commander'; prevBlank = false; continue; }
     if (SKIP_HEAD.test(line)) { section = 'skip'; continue; }
+    if (COMP_HEAD.test(line)) { section = 'companion'; prevBlank = false; continue; }
     if (SIDE_HEAD.test(line)) { section = 'side'; prevBlank = false; continue; }
     if (MAIN_HEAD.test(line) || (TYPE_COUNT_HEAD.test(line) && !/^\d/.test(line))) { section = 'main'; prevBlank = false; continue; }
     if (section === 'skip') continue;
@@ -57,7 +60,8 @@ function parseText(text) {
     const st = rest.match(/^(.+?)\s+\(([A-Za-z0-9]{2,6})\)(?:\s+([\w★\-]+))?\s*$/) || rest.match(/^(.+?)\s+\[([A-Za-z0-9]{2,6})\](?:\s+([\w★\-]+))?\s*$/);
     if (st) { rest = st[1]; set = st[2].toLowerCase(); cn = st[3] || null; }
     if (!rest || qty < 1 || qty > 250) continue;
-    out.push({ qty, name: rest.trim(), set, cn, foil, commander: commander && !side, side: side && !commander, block, pos: out.length });
+    const companion = section === 'companion' && !commander;
+    out.push({ qty, name: rest.trim(), set, cn, foil, commander: commander && !side && !companion, side: side && !commander && !companion, companion, block, pos: out.length });
     any = true; prevBlank = false;
   }
   // Bloques separados por líneas en blanco: un bloque pequeño al principio o al final suele ser el comandante
@@ -105,6 +109,7 @@ const lc = s => String(s || '').toLowerCase();
 function compatible(a, b) {
   const pa = a.card.pt || '', pb = b.card.pt || '';
   if (pa === 'partner' && pb === 'partner') return true;
+  if (pa.startsWith('pt:') && pa === pb) return true;
   if (pa.startsWith('pw:') && lc(b.card.name).startsWith(pa.slice(3))) return true;
   if (pb.startsWith('pw:') && lc(a.card.name).startsWith(pb.slice(3))) return true;
   if (pa === 'friends' && pb === 'friends') return true;
@@ -116,8 +121,12 @@ function inferCommander(items) {
   const info = { how: null, sure: true, alternatives: [], notes: [] };
   const sum = arr => arr.reduce((s, i) => s + i.qty, 0);
   const known = i => i.card && i.card.cmd != null;
+  // Compañero: en su sección, o una carta con «Companion» suelta en el sideboard (exportaciones de MTGO/Arena)
+  for (const i of items) if (i.side && i.qty === 1 && i.card && i.card.comp) { i.side = false; i.companion = true; }
+  const comps = items.filter(i => i.companion);
+  if (comps.length) info.notes.push(`Compañero: ${comps.map(i => (i.card && i.card.name) || i.name).join(', ')} (va fuera de las 100 cartas)`);
   let side = items.filter(i => i.side);
-  let main = items.filter(i => !i.side);
+  let main = items.filter(i => !i.side && !i.companion);
   let marked = items.filter(i => i.commander);
   // Más de dos «comandantes» marcados: la marca no es fiable, se deduce entre todas
   if (marked.length > 2) {
@@ -156,11 +165,11 @@ function inferCommander(items) {
   // Lo que quede en el sideboard no es parte del mazo
   for (const i of items) if (i.side) i.skip = true;
   // 101 cartas porque el comandante está también dentro del mazo: se quita la copia repetida
-  let deck = items.filter(i => !i.skip);
+  let deck = items.filter(i => !i.skip && !i.companion);
   if (sum(deck) > 100) {
     for (const c of deck.filter(i => i.commander)) {
       const dup = deck.find(i => i !== c && !i.commander && i.card && c.card && i.card.name === c.card.name);
-      if (dup && sum(deck) > 100) { dup.skip = true; info.notes.push(`«${c.card.name}» aparecía también dentro del mazo: no se cuenta dos veces`); deck = items.filter(i => !i.skip); }
+      if (dup && sum(deck) > 100) { dup.skip = true; info.notes.push(`«${c.card.name}» aparecía también dentro del mazo: no se cuenta dos veces`); deck = items.filter(i => !i.skip && !i.companion); }
     }
   }
   const n = sum(deck);
@@ -358,16 +367,16 @@ async function value(text, onProgress = () => {}) {
     const sub = (unit || 0) * it.qty;
     total += sub;
     lines.push({ qty: it.qty, name: card.name, set: card.set, setName: card.setName, cn: card.cn, unit, total: Math.round(sub * 100) / 100,
-      img: card.img, url: pricedb.cleanUrl(card.cardmarket || card.url), commander: !!it.commander, from: it.from || null,
+      img: card.img, url: pricedb.cleanUrl(card.cardmarket || card.url), commander: !!it.commander, companion: !!it.companion, from: it.from || null,
       basic: BASICS.test(card.name) || /\bbasic\b/i.test(card.tl || '') });
   }
   // Juntar líneas repetidas de la misma carta
   const merged = new Map();
   for (const l of lines) {
     const m = merged.get(l.name);
-    if (m) { m.qty += l.qty; m.total = Math.round((m.total + l.total) * 100) / 100; m.commander = m.commander || l.commander; } else merged.set(l.name, l);
+    if (m) { m.qty += l.qty; m.total = Math.round((m.total + l.total) * 100) / 100; m.commander = m.commander || l.commander; m.companion = m.companion || l.companion; } else merged.set(l.name, l);
   }
-  const out = [...merged.values()].sort((a, b) => (b.commander - a.commander) || (b.total - a.total));
+  const out = [...merged.values()].sort((a, b) => (b.commander - a.commander) || (b.companion - a.companion) || (b.total - a.total));
   // Legalidad en Commander
   const legality = checkLegality(out, new Map(items.filter(i => i.card).map(i => [i.card.name, i.card])), cmdInfo);
   if (missing.length) { legality.problems.push({ k: 'missing', msg: `No encontradas (no se pueden comprobar): ${missing.join(', ')}` }); legality.ok = false; }
@@ -379,7 +388,7 @@ async function value(text, onProgress = () => {}) {
   } catch (e) { bracket = null; }
   const cmd = out.filter(l => l.commander).map(l => l.name);
   return {
-    total: Math.round(total * 100) / 100, cards: out.reduce((s, l) => s + l.qty, 0), lines: out, missing, noPrice,
+    total: Math.round(total * 100) / 100, cards: out.reduce((s, l) => s + (l.companion ? 0 : l.qty), 0), companion: out.filter(l => l.companion).map(l => l.name).join(', ') || null, lines: out, missing, noPrice,
     commander: cmd.length ? cmd.join(' + ') : null,
     bracket, legality,
     translated,
@@ -409,8 +418,10 @@ const getJob = id => jobs.get(id) || null;
 function checkLegality(lines, info, cmdInfo) {
   const problems = [];
   const of = l => info.get(l.name) || {};
-  const total = lines.reduce((s, l) => s + l.qty, 0);
+  const total = lines.reduce((s, l) => s + (l.companion ? 0 : l.qty), 0);
   const cmds = lines.filter(l => l.commander);
+  const comps = lines.filter(l => l.companion);
+  if (comps.reduce((s, l) => s + l.qty, 0) > 1) problems.push({ k: 'companion', msg: `Solo puede haber un compañero: ${comps.map(l => l.name).join(', ')}` });
   if (!cmds.length) problems.push({ k: 'commander', msg: 'No se sabe cuál es el comandante' });
   for (const c of cmds) if (of(c).cmd === 0) problems.push({ k: 'commander', msg: `«${c.name}» no puede ser comandante` });
   if (cmds.length === 2 && of(cmds[0]).pt != null && !compatible({ card: { ...of(cmds[0]), name: cmds[0].name } }, { card: { ...of(cmds[1]), name: cmds[1].name } })) {

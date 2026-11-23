@@ -190,7 +190,7 @@
       <div class="vtop" id="vm-top">${topHtml(r)}</div>
       <h3 class="vh">Lista completa</h3>
       <div class="tablewrap"><table class="tbl vtable"><thead><tr><th class="num">Cant.</th><th>Carta</th><th>Edición más barata</th><th class="num">Precio</th><th class="num">Total</th></tr></thead><tbody>
-        ${r.lines.map((l, i) => `<tr data-i="${i}" class="${l.commander ? 'cmdrow' : ''} ${out_(l) ? 'vout' : ''}"><td class="num">${l.qty}</td><td><a href="${esc(l.url || '#')}" target="_blank" rel="noopener">${esc(l.name)}</a>${l.from ? ` <small class="muted">(${esc(l.from)})</small>` : ''}${l.commander ? ' <span class="chip sm">Comandante</span>' : ''}</td>
+        ${r.lines.map((l, i) => `<tr data-i="${i}" class="${l.commander ? 'cmdrow' : ''} ${out_(l) ? 'vout' : ''}"><td class="num">${l.qty}</td><td><a href="${esc(l.url || '#')}" target="_blank" rel="noopener">${esc(l.name)}</a>${l.from ? ` <small class="muted">(${esc(l.from)})</small>` : ''}${l.commander ? ' <span class="chip sm">Comandante</span>' : ''}${l.companion ? ' <span class="chip sm">Compañero</span>' : ''}</td>
           <td class="muted small">${esc(l.setName || '')} ${l.set ? `(${esc(l.set.toUpperCase())})` : ''}</td><td class="num">${eur(l.unit)}</td><td class="num strong">${eur(l.total)}</td></tr>`).join('')}
       </tbody></table></div>
       <button class="jbtn-outline" id="vm-copy" style="margin-top:14px">Copiar resumen</button>`;

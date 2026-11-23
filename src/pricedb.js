@@ -60,7 +60,7 @@ function cleanUrl(u) {
 }
 
 // Versión de las reglas que se guardan con cada carta: subirla hace que se recalculen en la siguiente actualización
-const RULES_V = 2;
+const RULES_V = 3;
 // Datos de reglas de una carta de Scryfall: tipo, identidad de color, si puede ser comandante y cómo se empareja
 function rulesInfo(c) {
   const face = (c.card_faces && c.card_faces[0]) || c;
@@ -77,7 +77,10 @@ function rulesInfo(c) {
   const cmd = legendary && (/creature/i.test(frontType) || vehicle || /can be your commander/i.test(text)) ? 1 : 0;
   let pt = '';
   const pw = text.match(/partner with ([^\n(]+?)(?:\s*\(|\n|$)/i);
-  if (pw) pt = 'pw:' + pw[1].trim().toLowerCase();
+  // Compañeros «con tipo» (2025): «Partner—Survivors», «Partner—Father & son», «Partner—Character select»… solo entre el mismo tipo
+  const typed = text.match(/^partner\s*[—–-]\s*([^\n(]+?)\s*(?:\(|$)/im);
+  if (typed) pt = /^friends forever$/i.test(typed[1].trim()) ? 'friends' : 'pt:' + typed[1].trim().toLowerCase();
+  else if (pw) pt = 'pw:' + pw[1].trim().toLowerCase();
   else if (kw.includes('partner') || /^partner(\s*\(|$)/im.test(text)) pt = 'partner';
   else if (kw.includes('friends forever') || /friends forever/i.test(text)) pt = 'friends';
   else if (/choose a background/i.test(text)) pt = 'choosebg';
@@ -93,7 +96,9 @@ function rulesInfo(c) {
   let maxc = 1;
   if (/a deck can have any number of cards named/i.test(text)) maxc = 99;
   else { const m = text.match(/a deck can have up to (\w+) cards named/i); if (m) maxc = { seven: 7, nine: 9 }[m[1].toLowerCase()] || parseInt(m[1], 10) || 1; }
-  return { tl, ci, cmd: cmd || (pt === 'background' ? 1 : 0), pt, gc, et, tut, leg, maxc };
+  // Compañero (Lurrus, Jegantha…): va fuera de las 100 cartas
+  const comp = kw.includes('companion') || /^companion\s*[—–-]/im.test(text) ? 1 : 0;
+  return { tl, ci, cmd: cmd || (pt === 'background' ? 1 : 0), pt, gc, et, tut, leg, maxc, comp };
 }
 
 let running = false;
