@@ -262,6 +262,7 @@ function remove(accountId) {
   db.transaction(() => {
     I.unlink(keyOf(acc));
     db.prepare('UPDATE cmd_players SET account_id = NULL WHERE account_id = ?').run(acc.id);
+    try { db.prepare('DELETE FROM badges_seen WHERE account_id = ?').run(acc.id); } catch (e) { /* tabla aún no creada */ }
     db.prepare('DELETE FROM accounts WHERE id = ?').run(acc.id);
   })();
 }

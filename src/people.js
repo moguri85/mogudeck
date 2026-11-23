@@ -83,6 +83,26 @@ function nameFor(list, admin, key) {
   return nick || (withUser && (withUser.display || withUser.username)) || full || '—';
 }
 
+// Nombre público de cada persona (caché corta): para cara a cara, némesis, recompensas…
+let namesCache = null, namesAt = 0;
+function publicNames() {
+  if (namesCache && Date.now() - namesAt < 60e3) return namesCache;
+  const by = new Map();
+  for (const e of entries()) { if (!by.has(e.key)) by.set(e.key, []); by.get(e.key).push(e); }
+  namesCache = new Map([...by].map(([k, l]) => [k, nameFor(l, false, k)]));
+  namesAt = Date.now();
+  return namesCache;
+}
+function publicName(key) {
+  const k = I.resolve(key);
+  const n = publicNames().get(k);
+  if (n) return n;
+  const inf = I.info(k);
+  if (inf && inf.nick) return inf.nick;
+  if (k.startsWith('a:')) { const a = db.prepare('SELECT name, nick FROM accounts WHERE id = ?').get(Number(k.slice(2))); if (a) return a.nick || a.name; }
+  return k.slice(2);
+}
+
 function overview(game) {
   const all = entries();
   const groups = new Map();
@@ -291,4 +311,4 @@ function separate(src, dst, by) {
   return false;
 }
 
-module.exports = { entries, overview, profile, keyForMelee, keyForCommander, cmdKey, nameIndex, directory, suggest, duplicates, merge, allLinks, separate, principal };
+module.exports = { publicName, publicNames, entries, overview, profile, keyForMelee, keyForCommander, cmdKey, nameIndex, directory, suggest, duplicates, merge, allLinks, separate, principal };

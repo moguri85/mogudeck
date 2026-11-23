@@ -108,6 +108,24 @@ r.get('/cuenta', (req, res) => {
   res.send(page('Mi cuenta', html`
     ${req.query.bienvenida ? html`<div class="aflash ok" role="status">¡Cuenta creada! Si ya has jugado en la tienda, dinos cuál es tu ficha para juntar tu historial.</div>` : flash(req)}
     <div class="ahead"><div class="avatar">${acc.name.slice(0, 1).toUpperCase()}</div><div><h1>${acc.name}</h1><p class="muted">${acc.nick ? html`@${acc.nick} · ` : ''}${acc.email}</p></div></div>
+    ${(() => {
+      const K = require('../community'), B = require('../badges'), CM = require('./comunidad');
+      const nw = feature('badges') ? B.fresh(acc.id, acc.person) : [];
+      const st = feature('badges') ? B.of(acc.person) : null;
+      const pend = feature('loans') ? K.loanPending(acc.id) : 0;
+      const tm = feature('trades') ? K.tradeMatches(acc.id).length : 0;
+      const pr = feature('porra') ? K.porraStats(acc.id) : null;
+      const R = require('../rivals').rivals(acc.person);
+      const links = [
+        pend ? html`<a class="qchip hot" href="/prestamos">${pend} ${pend === 1 ? 'solicitud' : 'solicitudes'} de préstamo</a>` : '',
+        tm ? html`<a class="qchip" href="/cambios">${tm} ${tm === 1 ? 'cruce' : 'cruces'} en Tengo / Busco</a>` : '',
+        pr && pr.total ? html`<a class="qchip" href="/porra#ranking">Porra: ${pr.pts} pts</a>` : '',
+        R.nemesis ? html`<a class="qchip" href="/vs/${encodeURIComponent(acc.person)}/${encodeURIComponent(R.nemesis.key)}">Tu némesis: ${people.publicName(R.nemesis.key)}</a>` : '',
+      ].filter(Boolean);
+      return html`${nw.length ? html`<div class="newbadges" role="status"><b>¡Nuevo logro!</b>${nw.map(b => html`<span>${CM.medal(b, 40)}${b.name} · ${b.tierName}</span>`)}</div>` : ''}
+        ${st ? html`<a class="lvlwrap" href="/logros">${CM.levelCard(st, { compact: true })}</a>` : ''}
+        ${links.length ? html`<div class="qchips">${links}</div>` : ''}`;
+    })()}
 
     <section class="acard"><h2>Tus torneos</h2>
       ${mine.length ? html`<div class="evlist">${mine.map(({ ev, me }) => html`<div class="myev">
@@ -152,7 +170,7 @@ r.get('/cuenta', (req, res) => {
         <label>Contraseña actual<input type="password" name="current" autocomplete="current-password" required></label>
         <label>Contraseña nueva<input type="password" name="next" autocomplete="new-password" minlength="8" required></label><button class="jbtn-outline">Cambiar</button></form></details>
       <div class="arow2"><form method="post" action="/salir"><button class="jbtn-outline">Cerrar sesión</button></form>
-        <details class="dangerz"><summary>Borrar mi cuenta</summary><p class="small muted">Se borra tu cuenta y tus mazos guardados. Tu historial de torneos sigue en la tienda, pero ya no estará unido a ti.</p>
+        <details class="dangerz"><summary>Borrar mi cuenta</summary><p class="small muted">Se borra tu cuenta con tus mazos guardados, tu Tengo / Busco, tus mazos para prestar y tus pronósticos. Tu historial de torneos sigue en la tienda, pero ya no estará unido a ti.</p>
           <form method="post" action="/cuenta/borrar" onsubmit="return confirm('¿Borrar tu cuenta? No se puede deshacer.')"><button class="btn danger-ghost small">Borrar mi cuenta</button></form></details></div>
     </section>`));
 });

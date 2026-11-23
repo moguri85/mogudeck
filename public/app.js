@@ -203,6 +203,7 @@ document.querySelectorAll('form[data-places]').forEach(f => {
     const [p, s] = a.dataset.nav.split('?');
     const match = s ? cmdPage
       : p === '/' ? !cmdPage && (here === '/' || /^\/(t|mesa|jugador)\//.test(here))
+      : p === '/comunidad' ? /^\/(comunidad|logros|porra|recompensas|cambios|prestamos|vs|momentos)(\/|$)/.test(here)
       : here.startsWith(p);
     if (match) a.setAttribute('aria-current', 'page');
   });

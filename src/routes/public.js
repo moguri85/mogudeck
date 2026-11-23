@@ -124,6 +124,14 @@ r.get('/', (req, res) => {
       ${cmdNow.map(e => { const sn = C.snapshot(e.id); return liveTile({ href: `/commander/${e.id}`, color: '#7b5ea7', label: 'Commander', name: e.name, round: sn.round, roundsTotal: sn.roundsPlanned, done: sn.done, total: sn.pods.length, end: sn.timerEnd, players: sn.players, final: sn.roundKind === 'final' }); })}
       ${live.map(t => { const sm = data.summary(t); const g = melee.gameInfo(t.game); return liveTile({ href: `/t/${t.id}`, color: g.color, label: g.short, name: t.name, round: sm.round, roundsTotal: sm.roundsTotal, done: sm.done, total: sm.total, end: sm.timerEnd, players: sm.players }); })}
     </div></section>` : ''}
+    ${(() => {
+      const K = require('../community');
+      const bs = feature('bounties') ? K.bounties({ status: 'active' }) : [];
+      const live = (data.liveTournaments().length || C.liveEvents().length) && feature('porra');
+      if (!bs.length && !live) return '';
+      return html`<div class="commstrip">${bs.length ? html`<a class="cs-wanted" href="/recompensas"><b>Se busca</b><span>${bs.slice(0, 3).map(b => people.publicName(b.person_key)).join(', ')}${bs.length > 3 ? '…' : ''}</span><em>Recompensa: ${bs[0].reward}${bs.length > 1 ? ' y más' : ''}</em></a>` : ''}
+        ${live ? html`<a class="cs-porra" href="/porra"><b>Porra</b><span>¿Quién gana cada mesa? Pronostica y suma puntos</span></a>` : ''}</div>`;
+    })()}
     <section id="proximos"><div class="sec-row"><h2 class="sec">Próximos torneos${agenda.length > PER ? html` <small class="muted">${agenda.length}</small>` : ''}</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
       ${agenda.length ? html`<div class="agenda">${agendaPage.map(a => html`<a class="arow" href="${a.href}" style="--g:${a.g.color}">
         ${dateTile(a.date)}
@@ -314,6 +322,19 @@ r.get('/jugador/:key', (req, res) => {
       <div><h1>${p.name}</h1><p class="muted">${p.games.map(g => html`<span class="gchip" style="--g:${melee.gameInfo(g.game).color}"><i></i>${gName(g.game)}</span> `)}</p></div></div>
     <div class="ptiles"><div><b>${p.events}</b><span>eventos</span></div><div><b>${p.titles}</b><span>torneos ganados</span></div>
       <div><b>${p.top3}</b><span>podios</span></div><div><b>${p.w}-${p.l}-${p.d}</b><span>V-D-E</span></div><div><b>${pct}%</b><span>victorias</span></div></div>
+    ${(() => { if (!feature('badges')) return ''; const CM = require('./comunidad'); const st = require('../badges').of(p.key); return html`<section><div class="sec-row"><h2 class="sec">Nivel e insignias</h2><a class="small" href="/logros">Cómo funciona</a></div>
+      ${CM.levelCard(st)}${st.earned ? CM.badgeGrid(st, { all: false }) : html`<p class="muted small">Aún sin insignias.</p>`}</section>`; })()}
+    ${(() => {
+      const R = require('../rivals').rivals(p.key);
+      if (!R.list.length) return '';
+      const nm = k => people.publicName(k);
+      const vs = k => `/vs/${encodeURIComponent(p.key)}/${encodeURIComponent(k)}`;
+      return html`<section><h2 class="sec">Rivales</h2>
+        ${R.nemesis || R.victim ? html`<div class="nemcards">
+          ${R.nemesis ? html`<a class="nemcard nem" href="${vs(R.nemesis.key)}"><small>Su némesis</small><b>${nm(R.nemesis.key)}</b><span>le ha ganado ${R.nemesis.l} ${R.nemesis.l === 1 ? 'vez' : 'veces'} (${R.nemesis.w}-${R.nemesis.l}${R.nemesis.d ? `-${R.nemesis.d}` : ''})</span></a>` : ''}
+          ${R.victim ? html`<a class="nemcard vic" href="${vs(R.victim.key)}"><small>Su víctima favorita</small><b>${nm(R.victim.key)}</b><span>le ha ganado ${R.victim.w} ${R.victim.w === 1 ? 'vez' : 'veces'} (${R.victim.w}-${R.victim.l}${R.victim.d ? `-${R.victim.d}` : ''})</span></a>` : ''}</div>` : ''}
+        <div class="results">${R.list.slice(0, 8).map(x => html`<a class="rrow rivrow" href="${vs(x.key)}"><span class="r-name"><b>${nm(x.key)}</b></span><span class="r-pl">${x.games} ${x.games === 1 ? 'duelo' : 'duelos'}</span><span class="r-win">${x.w}-${x.l}${x.d ? `-${x.d}` : ''}</span><span class="r-go">→</span></a>`)}</div></section>`;
+    })()}
     ${p.games.length > 1 ? html`<section><h2 class="sec">Por juego</h2><div class="pgames">${p.games.map(g => html`<div style="--g:${melee.gameInfo(g.game).color}">
       <span class="gchip"><i></i>${gName(g.game)}</span><b>${g.events}</b><small>eventos · ${g.w}-${g.l}-${g.d}${g.titles ? ` · ${g.titles} ${g.titles === 1 ? 'título' : 'títulos'}` : ''}${g.best ? ` · mejor ${g.best}º` : ''}</small></div>`)}</div></section>` : ''}
     <section><h2 class="sec">Historial</h2><div class="results">${p.entries.map(e => html`<a class="rrow" href="${e.href}" style="--g:${melee.gameInfo(e.game).color}">
@@ -342,6 +363,8 @@ r.get('/meta', (req, res) => {
   // Todos los juegos con torneos en la tienda (aunque aún no haya listas con cartas)
   const withCards = decks.gamesWithCards().map(g => g.game);
   const games = [...new Set([...withCards, ...db.prepare("SELECT DISTINCT game FROM tournaments WHERE hidden = 0 AND game IS NOT NULL AND game != ''").all().map(x => x.game)])];
+  const hasCmdMeta = db.prepare("SELECT 1 FROM cmd_players p JOIN cmd_events e ON e.id = p.event_id WHERE e.public = 1 AND p.deck_value_cents IS NOT NULL LIMIT 1").get();
+  if (req.query.juego === 'commander' && hasCmdMeta) return res.send(metaCommander(req, games));
   const game = games.includes(req.query.juego) ? req.query.juego : withCards.includes('CyberpunkTCG') ? 'CyberpunkTCG' : withCards[0] || games[0];
   const typeEs = t => ({ Legend: 'Leyenda', Unit: 'Unidad', Gear: 'Equipo', Program: 'Programa' }[t] || t || '');
   const days = [30, 90, 365].includes(Number(req.query.dias)) ? Number(req.query.dias) : 90;
@@ -395,7 +418,7 @@ r.get('/meta', (req, res) => {
   res.send(String(publicPage('Meta', html`
     <h1>Meta de la tienda</h1>
     <p class="muted">${view === 'barajas' ? 'Las barajas (combinación del mazo) que más ganan' : view === 'winrate' ? 'Las cartas cuyos mazos más ganan' : 'Las cartas más jugadas'} en los torneos de la tienda, según las listas registradas en Melee.</p>
-    ${games.length ? html`<div class="chips gamechips">${games.map(x => html`<a href="${q('juego', x)}" class="${x === game ? 'on' : ''}" style="--g:${melee.gameInfo(x).color}"><i></i>${melee.gameInfo(x).short}</a>`)}</div>` : ''}
+    ${games.length ? html`<div class="chips gamechips">${games.map(x => html`<a href="${q('juego', x)}" class="${x === game ? 'on' : ''}" style="--g:${melee.gameInfo(x).color}"><i></i>${melee.gameInfo(x).short}</a>`)}${hasCmdMeta ? html`<a href="/meta?juego=commander" style="--g:#7b5ea7"><i></i>Commander</a>` : ''}</div>` : ''}
     <div class="chips">${[[30, 'Último mes'], [90, 'Últimos 3 meses'], [365, 'Último año']].map(([d, l]) => html`<a href="${q('dias', d)}" class="${d === days ? 'on' : ''}">${l}</a>`)}</div>
     ${(() => {
       const tabs = html`<div class="tabs metatabs" role="tablist"><a role="tab" href="${q('ver', 'uso')}" class="${view === 'uso' ? 'on' : ''}">Más jugadas</a><a role="tab" href="${q('ver', 'winrate')}" class="${view === 'winrate' ? 'on' : ''}">Win rate de cartas</a><a role="tab" href="${q('ver', 'barajas')}" class="${view === 'barajas' ? 'on' : ''}">Win rate de barajas</a></div>`;
@@ -422,6 +445,31 @@ r.get('/meta', (req, res) => {
     })()}
     <div id="cardtip" class="cardtip" hidden><img alt=""></div>`)));
 });
+
+// Precio del meta en Commander: cuánto cuestan los mazos que se juegan y los que ganan
+function metaCommander(req, games) {
+  const days = [30, 90, 365].includes(Number(req.query.dias)) ? Number(req.query.dias) : 30;
+  const mp = require('../community').metaPrice(days);
+  const eur = c => money(c);
+  const row = (x, i) => html`<a class="rrow mprow" href="${x.href}"><span class="r-date">${i + 1}</span><span class="r-name"><b>${x.deck || 'Sin nombre'}</b><small class="muted"> · ${x.name} · ${x.event}</small></span>
+    <span class="r-win">${x.champion ? html`${TR} campeón` : `${x.pods} ${x.pods === 1 ? 'mesa ganada' : 'mesas ganadas'}`}</span><span class="r-pl"><b>${eur(x.v)}</b></span></a>`;
+  const share = h => (h.n ? Math.round(h.w * 100 / h.n) / 100 : 0);
+  return String(publicPage('Precio del meta', html`
+    <h1>Meta de la tienda</h1>
+    <p class="muted">Cuánto cuestan los mazos de Commander que se juegan en la tienda y los que ganan, según el valor validado en «Analizar mazo».</p>
+    <div class="chips gamechips">${games.map(x => html`<a href="/meta?juego=${encodeURIComponent(x)}" style="--g:${melee.gameInfo(x).color}"><i></i>${melee.gameInfo(x).short}</a>`)}<a href="/meta?juego=commander" class="on" style="--g:#7b5ea7"><i></i>Commander</a></div>
+    <div class="chips">${[[30, 'Último mes'], [90, 'Últimos 3 meses'], [365, 'Último año']].map(([d, l]) => html`<a href="/meta?juego=commander&dias=${d}" class="${d === days ? 'on' : ''}">${l}</a>`)}</div>
+    ${mp.decks ? html`
+      <div class="ptiles"><div><b>${eur(mp.avg)}</b><span>mazo medio</span></div><div><b>${eur(mp.median)}</b><span>mediana</span></div>
+        <div><b>${mp.winAvg != null ? eur(mp.winAvg) : '—'}</b><span>media de los que ganan mesa</span></div><div><b>${mp.decks}</b><span>mazos validados</span></div></div>
+      <div class="mpcmp"><div><small>El más barato</small><b>${eur(mp.min.v)}</b><span>${mp.min.deck || ''} · ${mp.min.name}</span></div><div><small>El más caro</small><b>${eur(mp.max.v)}</b><span>${mp.max.deck || ''} · ${mp.max.name}</span></div></div>
+      ${mp.halves.cheap.n && mp.halves.dear.n ? html`<p class="mpnote">¿Gana más quien gasta más? Los mazos de hasta <b>${eur(mp.halves.cut)}</b> ganan <b>${String(share(mp.halves.cheap)).replace('.', ',')}</b> mesas por jugador; los más caros, <b>${String(share(mp.halves.dear)).replace('.', ',')}</b>.</p>` : ''}
+      ${mp.cheapWinners.length ? html`<section><h2 class="sec">Los ganadores más baratos</h2><div class="results">${mp.cheapWinners.map(row)}</div></section>` : ''}
+      ${mp.champions.length ? html`<section><h2 class="sec">Mazos campeones</h2><div class="results">${mp.champions.map(row)}</div></section>` : ''}
+      ${mp.byBracket.length ? html`<section><h2 class="sec">Por bracket</h2><div class="ptiles">${mp.byBracket.map(b => html`<div><b>${eur(b.avg)}</b><span>bracket ${b.b === 2 ? '1-2' : b.b} · ${b.n} mazos</span></div>`)}</div></section>` : ''}
+      <p class="small muted">Precio de cada carta: su impresión más barata en Cardmarket, sin tierras básicas. Solo mazos validados en torneos públicos de la tienda.</p>`
+    : html`<p class="muted">Todavía no hay mazos validados en este periodo.</p>`}`));
+}
 
 r.get('/carta/:game/:name', async (req, res) => {
   try {
@@ -703,11 +751,51 @@ r.get('/tv.json', (req, res) => {
     id: t.id, name: t.name, game: t.game, gameLabel: melee.gameInfo(t.game).short, color: melee.gameInfo(t.game).color,
     date: fmtDate(t.start_date), qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/t/' + t.id)),
   }));
+  const liveOut = live.map(t => ({ ...data.liveSnapshot(t.id), color: melee.gameInfo(t.game).color, gameLabel: melee.gameInfo(t.game).short,
+    qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/t/' + t.id)) })).concat(cmd);
+  // Comunidad en la TV: revanchas, «Se busca» y momentos
+  const K = require('../community');
+  const R = require('../rivals');
+  const bnt = feature('bounties') ? K.bounties() : [];
+  const wanted = new Map(bnt.filter(b => b.status === 'active').map(b => [b.person_key, b]));
+  const idx = people.nameIndex();
+  for (const t of liveOut) {
+    try {
+      if (t.kind === 'commander') {
+        const keyOf = new Map(C.players(t.id).map(p => [p.id, people.cmdKey(p, idx)]));
+        for (const pod of t.pods || []) {
+          const ks = pod.players.map(x => ({ id: x.id, name: x.name, key: keyOf.get(x.id) }));
+          pod.wanted = ks.filter(x => wanted.has(x.key)).map(x => ({ name: x.name, reward: wanted.get(x.key).reward }));
+          pod.rematch = null;
+          for (let i = 0; i < ks.length && !pod.rematch; i++) for (let j = i + 1; j < ks.length; j++) {
+            const rm = R.rematch(ks[i].key, ks[j].key, { id: t.id, source: 'commander' });
+            if (rm && rm.nemesis) { pod.rematch = { a: ks[i].name, b: ks[j].name, w: rm.w, l: rm.l, d: rm.d, nemesis: rm.nemesis }; break; }
+          }
+        }
+      } else {
+        const pm = data.playersMap(t.id);
+        const keyOf = team => { const p = pm.get(team); return p ? require('../identity').resolve(p.username ? 'u:' + p.username.toLowerCase() : p.user_key) : null; };
+        for (const p of t.pairings || []) {
+          if (p.bye || !p.t2) continue;
+          const k1 = keyOf(p.t1), k2 = keyOf(p.t2);
+          p.wanted = [[k1, p.p1], [k2, p.p2]].filter(([k]) => wanted.has(k)).map(([k, n]) => ({ name: n, reward: wanted.get(k).reward }));
+          const rm = R.rematch(k1, k2, { id: t.id, source: 'melee' });
+          p.rematch = rm ? { w: rm.w, l: rm.l, d: rm.d, nemesis: rm.nemesis } : null;
+        }
+      }
+    } catch (e) { /* la TV sigue aunque falle esto */ }
+  }
+  const moments = feature('moments') ? K.moments({ status: 'approved', since: '-2 days', limit: 6 }).map(m => ({ id: m.id, src: config.basePath + '/momentos/f/' + m.id, caption: m.caption, who: m.who, event: m.event_label })) : [];
   res.set('Cache-Control', 'no-store').json({
     now: new Date().toISOString(),
-    live: live.map(t => ({ ...data.liveSnapshot(t.id), color: melee.gameInfo(t.game).color, gameLabel: melee.gameInfo(t.game).short,
-      qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/t/' + t.id)) })).concat(cmd),
+    live: liveOut,
     upcoming,
+    bounties: bnt.filter(b => b.status === 'active').slice(0, 3).map(b => ({ id: b.id, name: people.publicName(b.person_key), reward: b.reward, note: b.note })),
+    claimed: bnt.filter(b => ['claimed', 'delivered'].includes(b.status) && b.claimed_at && Date.now() - new Date(b.claimed_at.replace(' ', 'T') + 'Z') < 3 * 3600e3)
+      .map(b => ({ id: b.id, winner: people.publicName(b.claimed_key), target: people.publicName(b.person_key), reward: b.reward })),
+    moments,
+    momentsQr: feature('moments') ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/momentos/subir')) : null,
+    bountiesQr: bnt.length ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/recompensas')) : null,
   });
 });
 

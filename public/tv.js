@@ -40,7 +40,16 @@
       }
       if (!t.pairings.length && !t.standings.length) out.push({ kind: 'wait', t });
     }
-    if (!out.length) out.push({ kind: 'upcoming' });
+    // Comunidad: revanchas y «Se busca» de la ronda en juego, carteles de recompensa y momentos de los jugadores
+    for (const t of state.live) {
+      const rows = t.kind === 'commander'
+        ? (t.pods || []).filter(p => !p.reported && (p.rematch || (p.wanted && p.wanted.length))).map(p => ({ table: p.table, rematch: p.rematch, wanted: p.wanted || [], names: p.players.map(x => x.name) }))
+        : (t.pairings || []).filter(p => !p.hasResult && !p.bye && (p.rematch || (p.wanted && p.wanted.length))).map(p => ({ table: p.table, rematch: p.rematch && { ...p.rematch, a: p.p1, b: p.p2 }, wanted: p.wanted || [], names: [p.p1, p.p2] }));
+      if (rows.length) out.splice(out.findIndex(x => x.t === t) + 1, 0, { kind: 'hot', t, rows: rows.slice(0, 6) });
+    }
+    if (state.bounties && state.bounties.length) out.push({ kind: 'bounty' });
+    (state.moments || []).slice(0, 4).forEach(m => out.push({ kind: 'moment', m }));
+    if (!out.some(x => x.t)) out.unshift({ kind: 'upcoming' });
     return out;
   }
 
@@ -66,6 +75,7 @@
       ${progress(t)}<div id="clock">${clock(t)}</div><img class="tv-qr" src="${t.qr}" alt=""></div>`;
   }
 
+  const tags = p => (p.rematch && p.rematch.nemesis ? '<b class="tv-tag rm">Revancha</b>' : p.rematch ? '<b class="tv-tag rm">Revancha</b>' : '') + (p.wanted && p.wanted.length ? '<b class="tv-tag wd">Se busca</b>' : '');
   function render() {
     if (!state) return;
     const s = slides[idx % slides.length];
@@ -73,7 +83,7 @@
     if (s.kind === 'pairs') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Emparejamientos</span><span>${s.t.pending} pendientes${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
         <div class="tv-pairs">${s.rows.map(p => `<div class="tv-pair ${p.hasResult ? 'done' : ''}"><div class="tn">${p.bye ? 'BYE' : esc(p.table ?? '?')}</div>
-          <div class="who"><span>${esc(p.p1)}</span>${p.p2 ? `<span>${esc(p.p2)}</span>` : '<em>ronda libre</em>'}</div>
+          <div class="who"><span>${esc(p.p1)}</span>${p.p2 ? `<span>${esc(p.p2)}</span>` : '<em>ronda libre</em>'}${tags(p)}</div>
           <div class="st">${p.hasResult && !p.bye ? `${p.w1 ?? 0}-${p.w2 ?? 0}` : p.bye ? '' : 'jugando'}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'stand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 4 ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
@@ -83,7 +93,7 @@
     } else if (s.kind === 'pods') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Mesas · empieza quien aparece 1º</span><span>${s.t.pending} pendientes${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
         <div class="tv-pods">${s.rows.map(pod => `<div class="tv-pod ${pod.reported ? 'done' : ''}"><div class="tn">${pod.table}</div><div class="who">
-          ${pod.players.map(p => `<span class="${pod.winner === p.id ? 'win' : ''}"><i>${p.seat}º</i>${esc(p.name)}${pod.winner === p.id ? ' 🏆' : ''}</span>`).join('')}</div></div>`).join('')}</div></div>`;
+          ${pod.players.map(p => `<span class="${pod.winner === p.id ? 'win' : ''}"><i>${p.seat}º</i>${esc(p.name)}${pod.winner === p.id ? ' 🏆' : ''}</span>`).join('')}${pod.reported ? '' : tags(pod)}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'cstand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 'finished' ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
         <table class="tv-stand"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">V-D-E</th></tr></thead><tbody>
@@ -93,6 +103,20 @@
     } else if (s.kind === 'az') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Busca tu nombre</span><span>${s.rows[0].name.charAt(0).toUpperCase()}–${s.rows[s.rows.length - 1].name.charAt(0).toUpperCase()}${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
         <div class="tv-az" style="grid-template-rows:repeat(${Math.ceil(s.rows.length / 3)},auto)">${s.rows.map(r => `<div><span>${esc(r.name)}</span><b>${esc(r.where)}</b>${r.extra ? `<em>${esc(r.extra)}</em>` : ''}</div>`).join('')}</div></div>`;
+    } else if (s.kind === 'hot') {
+      body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Mesas calientes · ronda ${s.t.round}</span><span></span></div>
+        <div class="tv-hot">${s.rows.map(r => `<div class="hot"><div class="tn">${esc(r.table)}</div><div>
+          ${r.rematch ? `<b class="hk rm">¡Revancha!</b><p>${esc(r.rematch.a)} y ${esc(r.rematch.b)} ya se han visto: <b>${r.rematch.w}-${r.rematch.l}${r.rematch.d ? '-' + r.rematch.d : ''}</b>${r.rematch.nemesis ? ` · ${esc(r.rematch.nemesis === 'a' ? r.rematch.b : r.rematch.a)} es su némesis` : ''}</p>` : ''}
+          ${r.wanted.map(w => `<b class="hk wd">Se busca</b><p>Si alguien gana a <b>${esc(w.name)}</b> se lleva <b>${esc(w.reward)}</b></p>`).join('')}
+          ${!r.rematch && r.names.length > 2 ? `<p class="muted">${r.names.map(esc).join(' · ')}</p>` : ''}</div></div>`).join('')}</div></div>`;
+    } else if (s.kind === 'bounty') {
+      body = `<div class="tv-head" style="--g:#f47700"><div class="tv-title"><small>Recompensas</small>Se busca</div>${state.bountiesQr ? `<img class="tv-qr" src="${state.bountiesQr}" alt="">` : ''}</div>
+        <div class="tv-body"><div class="tv-wanted">${state.bounties.map(b => `<div class="tv-poster"><span>Se busca</span><div class="pf">${esc(b.name.charAt(0).toUpperCase())}</div><b>${esc(b.name)}</b>${b.note ? `<p>${esc(b.note)}</p>` : ''}<em>Recompensa<strong>${esc(b.reward)}</strong></em></div>`).join('')}</div>
+        <p class="tv-hint">Gánale una partida en un torneo de la tienda y la recompensa es tuya</p></div>`;
+    } else if (s.kind === 'moment') {
+      const m = s.m;
+      body = `<div class="tv-moment"><img src="${m.src}" alt=""><div class="tvm-cap">${m.caption ? `<b>${esc(m.caption)}</b>` : ''}<span>${esc(m.who)}${m.event ? ` · ${esc(m.event)}` : ''}</span></div>
+        ${state.momentsQr ? `<div class="tvm-qr"><img src="${state.momentsQr}" alt=""><small>Sube tu momento</small></div>` : ''}</div>`;
     } else if (s.kind === 'wait') {
       body = head(s.t) + `<div class="tv-body"><div class="tv-title" style="text-align:center;margin-top:20vh">${s.t.players.total || 0} jugadores inscritos<small style="margin-top:2vh">Escanea el QR para seguir el torneo en tu móvil</small></div></div>`;
     } else {
@@ -123,7 +147,13 @@
   const queue = [];
   let showing = false;
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const seenB = new Set();
   function celebrateNew(st) {
+    for (const b of st.claimed || []) {
+      if (seenB.has(b.id)) continue;
+      seenB.add(b.id);
+      if (primed) queue.push({ bounty: b });
+    }
     for (const t of st.live) {
       if (t.kind !== 'commander') continue;
       for (const pod of t.pods || []) {
@@ -174,7 +204,9 @@
   function next() {
     if (showing || !queue.length) return;
     showing = true;
-    const { t, pod } = queue.shift();
+    const item = queue.shift();
+    if (item.bounty) return showBounty(item.bounty);
+    const { t, pod } = item;
     const win = pod.players.find(p => p.id === pod.winner);
     const others = pod.players.filter(p => !win || p.id !== win.id).map(p => esc(p.name));
     const list = others.length > 1 ? others.slice(0, -1).join(', ') + ' y ' + others[others.length - 1] : others.join('');
@@ -191,7 +223,21 @@
     setTimeout(() => { o.classList.remove('on'); o.classList.add('off'); }, queue.length ? 5200 : 7000);
     setTimeout(() => { o.remove(); showing = false; next(); }, queue.length ? 5800 : 7600);
   }
-  // Vista previa: /tv?fiesta=1
+  function showBounty(b) {
+    const o = document.createElement('div');
+    o.className = 'cel bounty' + (reduce ? ' still' : '');
+    o.setAttribute('role', 'status');
+    o.innerHTML = `<div class="cel-rays"></div><div class="cel-in">${JUPI}
+      <div class="cel-kick">¡Recompensa cobrada!</div><div class="cel-name">${esc(b.winner)}</div>
+      <div class="cel-sub">ha derrotado a ${esc(b.target)}</div><div class="cel-vs">y se lleva <b>${esc(b.reward)}</b></div></div>`;
+    document.body.appendChild(o);
+    confetti(o);
+    requestAnimationFrame(() => o.classList.add('on'));
+    setTimeout(() => { o.classList.remove('on'); o.classList.add('off'); }, 7000);
+    setTimeout(() => { o.remove(); showing = false; next(); }, 7600);
+  }
+  // Vista previa: /tv?fiesta=1 (mesa) o /tv?fiesta=2 (recompensa)
+  if (/[?&]fiesta=2/.test(location.search)) setTimeout(() => { queue.push({ bounty: { winner: 'Luis Mora', target: 'Marta Ruiz', reward: 'Un sobre' } }); next(); }, 1200);
   if (/[?&]fiesta=1/.test(location.search)) setTimeout(() => {
     queue.push({ t: { name: 'Commander de los viernes' }, pod: { id: -1, table: 3, winner: 1, players: [{ id: 1, name: 'Marta Ruiz', deck: "Atraxa, Praetors' Voice" }, { id: 2, name: 'Luis Mora' }, { id: 3, name: 'Bea Gil' }, { id: 4, name: 'Iván Gil' }] } });
     next();

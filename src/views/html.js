@@ -109,6 +109,7 @@ const NAV = [
   ['/admin/liga', 'Ligas', 'staff'],
   ['/admin/jugadores', 'Jugadores', 'staff', null, ['/admin/cuentas', '/admin/vincular', '/admin/usuarios']],
   ['/admin/meta', 'Meta', 'staff'],
+  ['/admin/comunidad', 'Comunidad', 'staff'],
   ['/admin/caja', 'Caja', 'staff', 'cash'],
   ['/admin/guia', 'Guía Melee', 'staff'],
   ['/admin/ajustes', 'Ajustes', 'admin'],
@@ -131,7 +132,7 @@ function adminPage(req, title, body, { extraHead = '', flash = null } = {}) {
 </header>
 <div class="shell">
 <aside class="sidenav">${NAV.filter(n => (n[2] === 'staff' || user.role === 'admin') && (!n[3] || s['feature_' + n[3]] === '1')).map(([href, label, , , also]) =>
-    html`<a href="${href}" class="${active(href, also) ? 'on' : ''}">${label}${href === '/admin/jugadores' ? (() => { const n = require('../accounts').pendingCount(); return n ? html` <span class="navbadge" title="Solicitudes pendientes">${n}</span>` : ''; })() : ''}</a>`)}</aside>
+    html`<a href="${href}" class="${active(href, also) ? 'on' : ''}">${label}${href === '/admin/comunidad' ? (() => { const n = require('../db').feature('moments') ? require('../community').momentsPending() : 0; return n ? html` <span class="navbadge" title="Fotos por revisar">${n}</span>` : ''; })() : ''}${href === '/admin/jugadores' ? (() => { const n = require('../accounts').pendingCount(); return n ? html` <span class="navbadge" title="Solicitudes pendientes">${n}</span>` : ''; })() : ''}</a>`)}</aside>
 <main class="content">
 ${f ? html`<div class="flash ${req.query.err ? 'err' : ''}">${f}</div>` : ''}
 <h1>${title}</h1>
@@ -145,10 +146,11 @@ ${body}
 const TROPHY = '<svg class="ico-tr" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v3a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5v1a3 3 0 0 0 3 3M16 5h3v1a3 3 0 0 1-3 3M12 11v4M9 20h6M10 15h4v5h-4z"/></svg>';
 
 // Menú público: arriba en ordenador y como barra inferior con iconos en el móvil
-const NAV_ICONS = {"torneos": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v3a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5v1a3 3 0 0 0 3 3M16 5h3v1a3 3 0 0 1-3 3M12 11v4M9 20h6M10 15h4v5h-4z"/></svg>', "commander": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l4 4 4-7 4 7 4-4-2 10H6L4 8Z"/><path d="M6 21h12"/></svg>', "ligas": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11h4v9M10 20V5h4v15M16 20v-6h4v6M3 20h18"/></svg>', "meta": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="11" height="15" rx="2"/><path d="M9 21h9a2 2 0 0 0 2-2V8"/></svg>', "valor": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3" width="11" height="15" rx="2"/><circle cx="15" cy="15" r="4"/><path d="m18 18 3 3"/></svg>'};
+const NAV_ICONS = {"comunidad": '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><circle cx="17" cy="9.5" r="2.5"/><path d="M3.5 19c.8-3.4 3-5 5.5-5s4.7 1.6 5.5 5M14.5 14.6c.8-.4 1.6-.6 2.5-.6 2 0 3.6 1.3 4.2 4"/></svg>', "torneos": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4h8v3a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5v1a3 3 0 0 0 3 3M16 5h3v1a3 3 0 0 1-3 3M12 11v4M9 20h6M10 15h4v5h-4z"/></svg>', "commander": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8l4 4 4-7 4 7 4-4-2 10H6L4 8Z"/><path d="M6 21h12"/></svg>', "ligas": '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20V11h4v9M10 20V5h4v15M16 20v-6h4v6M3 20h18"/></svg>', "meta": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3" width="11" height="15" rx="2"/><path d="M9 21h9a2 2 0 0 0 2-2V8"/></svg>', "valor": '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3" width="11" height="15" rx="2"/><circle cx="15" cy="15" r="4"/><path d="m18 18 3 3"/></svg>'};
 function navLinks(s, icons) {
   const items = [['/', 'Torneos', 'torneos'], ['/?juego=commander', 'Commander', 'commander'], ['/liga', 'Ligas', 'ligas'],
-    ...(s.feature_meta === '1' ? [['/meta', 'Meta', 'meta']] : []), ['/valor-mazo', icons ? 'Mazo' : 'Analizar mazo', 'valor']];
+    ...(s.feature_meta === '1' ? [['/meta', 'Meta', 'meta']] : []), ['/valor-mazo', icons ? 'Mazo' : 'Analizar mazo', 'valor'],
+    ...(['badges', 'porra', 'bounties', 'trades', 'loans'].some(k => s['feature_' + k] === '1') ? [['/comunidad', icons ? 'Más' : 'Comunidad', 'comunidad']] : [])];
   return items.map(([href, label, ic]) => `<a href="${href}" data-nav="${href}">${icons ? NAV_ICONS[ic] : ''}<span>${label}</span></a>`).join('');
 }
 

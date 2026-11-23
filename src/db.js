@@ -221,6 +221,12 @@ const DEFAULT_SETTINGS = {
   feature_cash: '0',
   feature_profiles: '1',
   feature_meta: '1',
+  feature_badges: '1',
+  feature_porra: '1',
+  feature_bounties: '1',
+  feature_trades: '1',
+  feature_loans: '1',
+  feature_moments: '0',
   backup_keep: '14',
 };
 

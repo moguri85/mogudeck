@@ -59,6 +59,7 @@ r.use(['/caja'], needs('cash'));
 r.use(/^\/torneos\/\d+\/premio/, needs('prizes'));
 
 r.use('/commander', require('./commander-admin'));
+r.use('/', require('./comunidad-admin'));
 
 // ---------------- Inicio ----------------
 r.get('/', (req, res) => {
@@ -1104,6 +1105,13 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
     ${cb('feature_cash', 'Caja: recaudación y neto por torneo (y exportar CSV)')}
     ${cb('feature_profiles', 'Perfiles públicos de jugadores (historial al pulsar su nombre)')}
     ${cb('feature_meta', 'Meta público por cartas (/meta), con imágenes de Cyberpunk TCG')}
+    <h2 class="full">Comunidad</h2>
+    ${cb('feature_badges', 'Logros: XP, niveles e insignias en el perfil y en Mi cuenta')}
+    ${cb('feature_porra', 'Porra: los jugadores pronostican quién gana cada mesa (solo puntos)')}
+    ${cb('feature_bounties', 'Se busca: recompensas sobre jugadores (web y TV)')}
+    ${cb('feature_trades', 'Tengo / Busco: listas de cambio de cartas de todos los juegos')}
+    ${cb('feature_loans', 'Mazos de préstamo: los jugadores prestan y piden mazos')}
+    ${cb('feature_moments', 'Momentos: fotos de los jugadores en la TV (con revisión del staff antes de salir)')}
     ${cb('show_game_img', 'Imagen o logo del juego en las tarjetas de torneo (si está desactivado, solo se ve la imagen propia del torneo en Melee)')}
     <h2 class="full">Avisos automáticos</h2>
     <label class="full">Webhook de Discord<input name="discord_webhook" value="${s.discord_webhook}" placeholder="https://discord.com/api/webhooks/…"></label>
@@ -1146,7 +1154,8 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
       Por seguridad no se guardan ni se muestran aquí.</p></section>`));
 });
 r.post('/ajustes', auth.requireAdmin, (req, res) => {
-  const checks = ['show_real_names', 'notify_new', 'notify_rounds', 'notify_final', 'feature_prizes', 'feature_cash', 'feature_profiles', 'feature_meta', 'show_game_img'];
+  const checks = ['show_real_names', 'notify_new', 'notify_rounds', 'notify_final', 'feature_prizes', 'feature_cash', 'feature_profiles', 'feature_meta', 'show_game_img',
+    'feature_badges', 'feature_porra', 'feature_bounties', 'feature_trades', 'feature_loans', 'feature_moments'];
   for (const k of Object.keys(DEFAULT_SETTINGS)) {
     if (checks.includes(k)) setSetting(k, req.body[k] ? '1' : '0');
     else if (k in req.body) setSetting(k, String(req.body[k]).trim());
