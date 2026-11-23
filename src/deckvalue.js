@@ -127,7 +127,7 @@ function inferCommander(items) {
   }
   if (marked.length) {
     info.how = 'marcado';
-    for (const m of marked) if (known(m) && !m.card.cmd) info.notes.push(`«${m.card.name}» está marcada como comandante pero no es una criatura legendaria`);
+    for (const m of marked) if (known(m) && !m.card.cmd) info.notes.push(`«${m.card.name}» está marcada como comandante pero no puede serlo (no es criatura legendaria ni Vehículo legendario)`);
   } else if (side.length && side.length <= 2 && side.every(i => i.qty === 1 && known(i) && i.card.cmd) && sum(main) + sum(side) >= 98) {
     side.forEach(i => { i.commander = true; i.side = false; });
     info.how = 'sideboard';
@@ -215,7 +215,9 @@ const getCache = db.prepare('SELECT json, fetched_at FROM card_cache WHERE key =
 const putCache = db.prepare('INSERT OR REPLACE INTO card_cache (key, json, fetched_at) VALUES (?, ?, ?)');
 function cached(key) {
   const r = getCache.get(key);
-  return r && Date.now() - r.fetched_at < TTL ? JSON.parse(r.json) : undefined;
+  if (!r || Date.now() - r.fetched_at >= TTL) return undefined;
+  const j = JSON.parse(r.json);
+  return j && j.name && j.rv !== pricedb.RULES_V ? undefined : j; // guardada con reglas antiguas: se vuelve a pedir
 }
 function store(key, card) { putCache.run(key, JSON.stringify(card), Date.now()); }
 
@@ -251,7 +253,7 @@ function slim(c) {
     name: c.name, set: c.set, cn: c.collector_number, setName: c.set_name, eur: c.prices.eur ? parseFloat(c.prices.eur) : null,
     eurFoil: c.prices.eur_foil ? parseFloat(c.prices.eur_foil) : null, img: img.small || img.normal || null, url: c.scryfall_uri,
     cardmarket: c.purchase_uris && c.purchase_uris.cardmarket ? c.purchase_uris.cardmarket : null,
-    ...pricedb.rulesInfo(c),
+    ...pricedb.rulesInfo(c), rv: pricedb.RULES_V,
   };
 }
 

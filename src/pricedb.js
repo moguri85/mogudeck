@@ -59,6 +59,8 @@ function cleanUrl(u) {
   if (added) setSetting('price_db_version', '');
 }
 
+// Versión de las reglas que se guardan con cada carta: subirla hace que se recalculen en la siguiente actualización
+const RULES_V = 2;
 // Datos de reglas de una carta de Scryfall: tipo, identidad de color, si puede ser comandante y cómo se empareja
 function rulesInfo(c) {
   const face = (c.card_faces && c.card_faces[0]) || c;
@@ -68,7 +70,11 @@ function rulesInfo(c) {
   const kw = (c.keywords || []).map(k => k.toLowerCase());
   const ci = 'WUBRG'.split('').filter(k => (c.color_identity || []).includes(k)).join('');
   const legendary = /legendary/i.test(frontType);
-  const cmd = legendary && (/creature/i.test(frontType) || /can be your commander/i.test(text)) ? 1 : 0;
+  // Puede ser comandante: criatura legendaria, «puede ser tu comandante» o, desde Edge of Eternities (2025),
+  // Vehículo o Nave espacial legendaria con fuerza/resistencia (Shorikai, Parhelion II…)
+  const hasPT = face.power != null || c.power != null;
+  const vehicle = /\b(vehicle|spacecraft)\b/i.test(frontType) && hasPT;
+  const cmd = legendary && (/creature/i.test(frontType) || vehicle || /can be your commander/i.test(text)) ? 1 : 0;
   let pt = '';
   const pw = text.match(/partner with ([^\n(]+?)(?:\s*\(|\n|$)/i);
   if (pw) pt = 'pw:' + pw[1].trim().toLowerCase();
@@ -137,7 +143,7 @@ async function refresh({ force = false } = {}) {
       try { guide = await loadGuide(src); guideInfo = { createdAt: guide.createdAt, products: guide.map.size, used: 0, error: null }; }
       catch (e) { guideInfo = { error: e.message }; log('warn', 'Guía de precios de Cardmarket: ' + e.message + '. Se usan los precios de Scryfall.'); }
     }
-    const version = `${entry.updated_at}|${guide ? src + '|' + (guide.createdAt || '') : 'scryfall'}`;
+    const version = `r${RULES_V}|${entry.updated_at}|${guide ? src + '|' + (guide.createdAt || '') : 'scryfall'}`;
     if (!force && version === setting('price_db_version') && count() > 0) return status();
     const uri = entry.jsonl_download_uri || entry.download_uri;
     const res = await fetch(uri, { headers: { 'User-Agent': UA['User-Agent'] } });
@@ -203,4 +209,4 @@ function start() {
   setInterval(tick, 3 * 3600e3);
 }
 
-module.exports = { lookup, refresh, start, status, count, cleanUrl, rulesInfo, SOURCES };
+module.exports = { lookup, refresh, start, status, count, cleanUrl, rulesInfo, SOURCES, RULES_V };
