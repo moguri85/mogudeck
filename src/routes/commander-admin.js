@@ -122,6 +122,7 @@ function eventForm(ev, action) {
       <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
       <label>Vidas iniciales<select name="life_start">${[40, 30, 25, 20].map(n => html`<option value="${n}" ${(ev.life_start || 40) === n ? 'selected' : ''}>${n}</option>`)}</select></label>
       <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
+      <label>Combos de 2 cartas<select name="combo_lap">${[[6, 'Prohibidos antes de la vuelta 6'], [5, 'Prohibidos antes de la vuelta 5'], [4, 'Prohibidos antes de la vuelta 4'], [7, 'Prohibidos antes de la vuelta 7'], [8, 'Prohibidos antes de la vuelta 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 6) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
     </fieldset>
     <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="4">${ev.info || ''}</textarea></label>
     <div class="full"><button class="btn">Guardar</button></div></form>
@@ -145,7 +146,7 @@ function eventParams(b) {
 }
 function saveLife(id, b) {
   require('../life');
-  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, id);
+  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 6 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), id);
 }
 const ptsN = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.min(Math.max(Math.round(Number(v)), 0), 20));
 

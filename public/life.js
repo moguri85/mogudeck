@@ -13,7 +13,7 @@
   let menu = false, sheet = null, artSheet = null, hist = null;
   let arts = {}; // pid → { name, def, all? }
   let arrange = false, pick = null, turnSheet = false, skew = 0, installEv = null;
-  let tip10 = store.get('mt_life_tip10') !== '1';
+  let tip10 = store.get('mt_life_tip5') !== '1';
   // Sitio de cada jugador en ESTE aparato (cada uno en su esquina) y giro de cada panel
   let lay = {};
   const LK = () => `mt_life_layout_${pod.id}`;
@@ -72,7 +72,7 @@
     } catch (e) { /* sin fondos */ }
   }
 
-  // Toques: un toque es ±1; si mantienes pulsado, ±10 y repite mientras sigas pulsando
+  // Toques: un toque es ±1; si mantienes pulsado, ±5 y repite mientras sigas pulsando
   function bump(pid, d) {
     const p = st.players.find(x => x.id === pid);
     if (!p || p.out || st.done) return;
@@ -94,9 +94,9 @@
       e.preventDefault(); stepStop(false);
       step.fn = fn; step.long = false;
       step.t = setTimeout(() => {
-        step.t = null; step.long = true; fn(10);
-        if (tip10) { tip10 = false; store.set('mt_life_tip10', '1'); }
-        step.iv = setInterval(() => step.fn && step.fn(10), 600);
+        step.t = null; step.long = true; fn(5);
+        if (tip10) { tip10 = false; store.set('mt_life_tip5', '1'); }
+        step.iv = setInterval(() => step.fn && step.fn(5), 600);
       }, 450);
     });
     el.addEventListener('contextmenu', e => e.preventDefault());
@@ -121,6 +121,23 @@
   }
   const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const turnOn = () => !!(st.turn && !st.done);
+  // Combos de 2 cartas: prohibidos antes de la vuelta que diga el torneo (normalmente la 6)
+  const comboTag = () => { const c = info.comboLap; if (!c || !st.turn) return ''; const l = st.turn.lap || 1;
+    return l < c ? `<span class="lf-combo no">Sin combos hasta V${c}</span>` : '<span class="lf-combo ok">Combos permitidos</span>'; };
+  // Reloj de la ronda del torneo (el que pone la tienda)
+  function clockTxt() {
+    if (!info.timerEnd) return null;
+    const ms = new Date(info.timerEnd) - (Date.now() + skew);
+    return ms >= 0 ? { t: mmss(ms + 999), over: false } : { t: `+${mmss(-ms)}`, over: true };
+  }
+  function nextTurn() {
+    const all = st.players.slice().sort((a, b) => a.seat - b.seat);
+    const rel = id => { const s0 = all.findIndex(q => q.id === (st.turn.first || st.turn.pid)); return (all.findIndex(q => q.id === id) - s0 + all.length) % all.length; };
+    const i = all.findIndex(q => q.id === st.turn.pid);
+    const nx = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out);
+    if (!nx) return;
+    st.turn = { ...st.turn, pid: nx.id, n: st.turn.n + 1, lap: (st.turn.lap || 1) + (rel(nx.id) <= rel(st.turn.pid) ? 1 : 0), at: Date.now() + skew };
+  }
   function arrangePanel(p, i, rotd) {
     return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} arr ${pick === p.id ? 'picked' : ''}" data-swap="${p.id}">
       <div class="lf-in"><div class="lf-arr"><b>${esc(p.name)}</b>
@@ -139,13 +156,13 @@
     const pass = myTurn && mine() && !isDead ? '<button class="lf-pass" data-pass>Pasar turno</button>' : '';
     return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
-        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tt">Turno ${st.turn.n} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
+        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
             <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
         : st.sudden ? `<div class="lf-sudden"><span>¿Quién le hace daño?</span><div>${others.filter(o => !o.out).map(o => `<button data-kill="${p.id}" data-by="${o.id}" data-how="dano">${esc(o.name)}</button>`).join('')}</div></div>`
         : `<div class="lf-life"><button class="lz minus" data-z="${p.id}" data-d="-1" aria-label="Quitar una vida a ${esc(p.name)}"><span>−</span></button>
-            <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : tip10 && mine() ? '<small class="lf-tip">Mantén pulsado: ±10</small>' : ''}
+            <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : tip10 && mine() && !myTurn ? '<small class="lf-tip">Mantén pulsado: ±5</small>' : ''}
             <button class="lz plus" data-z="${p.id}" data-d="1" aria-label="Sumar una vida a ${esc(p.name)}"><span>+</span></button></div>`}
         ${st.sudden && !p.out ? `<footer>${pass}</footer>` : `<footer>${pass}<button data-sheet="${p.id}">Cmdte${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
           ${own ? `<button data-art="${p.id}">Fondo</button>` : ''}
@@ -174,11 +191,18 @@
       <button class="lf-noart ${!cur ? 'on' : ''}" data-pick-art="">Sin ilustración (solo color)</button>
       <button class="jbtn big" data-close-art>Hecho</button></div></div>`;
   }
+  function statsView() {
+    const ts = st.tstats || {};
+    const rows = st.players.filter(p => ts[p.id] && ts[p.id].n).map(p => { const t = ts[p.id]; return `<tr><td>${esc(p.name)}</td><td>${t.n}</td><td>${mmss(t.ms / t.n)}</td><td>${mmss(t.max)}</td><td>${mmss(t.ms)}</td></tr>`; });
+    return rows.length ? `<h3>Tiempo por jugador</h3><table class="lf-ts"><thead><tr><th></th><th>Turnos</th><th>Media</th><th>Más largo</th><th>Total</th></tr></thead><tbody>${rows.join('')}</tbody></table>` : '';
+  }
   function turnSheetView() {
     const alive = st.players.filter(p => !p.out).sort((a, b) => a.seat - b.seat);
     return `<div class="lf-sheet" role="dialog" aria-label="Turnos"><div class="lf-sh-in"><h2>${st.turn ? '¿De quién es el turno?' : '¿Quién empieza?'}</h2>
-      <p class="small">Después, «Pasar turno» va al siguiente por orden de asiento. Cada cambio de vidas queda apuntado con el turno en el que pasó.</p>
+      <p class="small">«Pasar turno» va al siguiente por orden de asiento. La vuelta sube cuando vuelve a tocarle a quien empezó${info.comboLap ? `; los combos de 2 cartas no valen antes de la vuelta ${info.comboLap}` : ''}.</p>
       <div class="lf-turns">${alive.map(p => `<button data-turn-to="${p.id}" class="${st.turn && st.turn.pid === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
+      ${st.turn ? `<div class="lf-row"><span>Vuelta</span><button data-lap="-1">−</button><b>${st.turn.lap || 1}</b><button data-lap="1">+</button></div>` : ''}
+      ${statsView()}
       ${st.turn ? '<button class="lf-noart" data-turn-off>Quitar los turnos</button>' : ''}
       <button class="jbtn big" data-close-turn>Cerrar</button></div></div>`;
   }
@@ -235,6 +259,7 @@
     const canPlay = mine() && !st.done && !arrange;
     root.innerHTML = `<div class="lf n${n} ${st.sudden ? 'is-sudden' : ''} ${arrange ? 'is-arr' : ''}">
       <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
+        ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
         : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
@@ -313,15 +338,10 @@
     on('[data-turns]', () => { menu = false; turnSheet = true; render(); });
     on('[data-close-turn]', () => { turnSheet = false; render(); });
     on('[data-turn-to]', b => { turnSheet = false; const pid = Number(b.dataset.turnTo);
-      act({ op: 'turn', pid }, () => { st.turn = { pid, n: st.turn ? st.turn.n : 1, at: Date.now() + skew }; }); });
+      act({ op: 'turn', pid }, () => { st.turn = st.turn ? { ...st.turn, pid, n: st.turn.n + 1, at: Date.now() + skew } : { pid, n: 1, lap: 1, first: pid, at: Date.now() + skew }; }); });
     on('[data-turn-off]', () => { turnSheet = false; act({ op: 'turnoff' }, () => { st.turn = null; }); });
-    on('[data-pass]', () => act({ op: 'turn' }, () => {
-      const all = st.players.slice().sort((a, b) => a.seat - b.seat);
-      const i = all.findIndex(q => q.id === st.turn.pid);
-      const nx = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out);
-      if (nx) st.turn = { pid: nx.id, n: st.turn.n + 1, at: Date.now() + skew };
-      if (navigator.vibrate) navigator.vibrate(15);
-    }));
+    on('[data-pass]', () => act({ op: 'turn' }, () => { nextTurn(); if (navigator.vibrate) navigator.vibrate(15); }));
+    on('[data-lap]', b => act({ op: 'lap', lap: (st.turn.lap || 1) + Number(b.dataset.lap) }, () => { st.turn.lap = Math.max(1, (st.turn.lap || 1) + Number(b.dataset.lap)); }));
     on('[data-install]', async () => { menu = false; try { installEv.prompt(); await installEv.userChoice; } catch (e) { /* nada */ } installEv = null; render(); });
   }
 
@@ -360,7 +380,10 @@
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); load(true); if (!es || es.readyState === 2) live(); } });
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; });
   // Reloj del turno (sin repintar todo)
-  setInterval(() => { const t = root.querySelector('[data-tt]'); if (t && st && st.turn) t.textContent = mmss(Date.now() + skew - st.turn.at); }, 1000);
+  setInterval(() => {
+    const t = root.querySelector('[data-tt]'); if (t && st && st.turn) t.textContent = mmss(Date.now() + skew - st.turn.at);
+    const c = root.querySelector('[data-rc]'), k = clockTxt(); if (c && k) { c.textContent = k.t; c.classList.toggle('over', k.over); }
+  }, 1000);
   if (pod) loadLay();
   wake();
   render();

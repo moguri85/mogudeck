@@ -28,6 +28,7 @@ addColumn('cmd_events', 'life_auto', 'INTEGER DEFAULT 0');
 addColumn('cmd_life_log', 'turn_pid', 'INTEGER');
 addColumn('cmd_life_log', 'turn_n', 'INTEGER');
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
+addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6'); // combos de 2 cartas prohibidos antes de esta vuelta (0 = sin límite)
 
 class LifeError extends Error {}
 const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
@@ -40,12 +41,13 @@ function podInfo(eventId, podId) {
 }
 function fresh(ev, players) {
   const start = [20, 25, 30, 40].includes(ev.life_start) ? ev.life_start : 40;
-  return { start, players: players.map(p => ({ id: p.id, name: C.pubName(p), deck: p.deck || '', seat: p.seat, life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })), log: [], done: null, turn: null };
+  return { start, players: players.map(p => ({ id: p.id, name: C.pubName(p), deck: p.deck || '', seat: p.seat, life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })), log: [], done: null, turn: null, tstats: {} };
 }
 function load(eventId, podId, create = true) {
   const ev = C.getEvent(eventId);
   if (!ev) throw new LifeError('Torneo no encontrado');
   const { pod, players } = podInfo(eventId, podId);
+  pod.timer_end = (db.prepare('SELECT timer_end FROM cmd_rounds WHERE id = ?').get(pod.round_id) || {}).timer_end || null;
   let row = db.prepare('SELECT * FROM cmd_life WHERE pod_id = ?').get(podId);
   if (!row && create) {
     db.prepare('INSERT OR IGNORE INTO cmd_life (pod_id, state) VALUES (?, ?)').run(podId, JSON.stringify(fresh(ev, players)));
@@ -55,8 +57,9 @@ function load(eventId, podId, create = true) {
 }
 function view(eventId, podId) {
   const x = load(eventId, podId);
-  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now() };
+  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6 };
 }
+const mmss = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
 const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
 // Quién parece haberle eliminado (para sugerirlo): daño de comandante letal, o el que más daño de comandante le ha hecho
 function guess(p) {
@@ -83,11 +86,11 @@ function trackChange(podId, byId, kind, pid, fromId, before, after, lifeAfter) {
     return;
   }
   db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, from_id, delta, before_v, after_v, life_after, at, updated_at, turn_pid, turn_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .run(podId, byId, kind, pid, fromId || null, d, before, after, lifeAfter, now, now, curTurn ? curTurn.pid : null, curTurn ? curTurn.n : null);
+    .run(podId, byId, kind, pid, fromId || null, d, before, after, lifeAfter, now, now, curTurn ? curTurn.pid : null, curTurn ? (curTurn.lap || curTurn.n) : null);
 }
 function note(podId, byId, kind, pid, text) {
   const now = Date.now();
-  db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, text, at, updated_at, turn_pid, turn_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(podId, byId, kind, pid || null, text, now, now, curTurn ? curTurn.pid : null, curTurn ? curTurn.n : null);
+  db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, text, at, updated_at, turn_pid, turn_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(podId, byId, kind, pid || null, text, now, now, curTurn ? curTurn.pid : null, curTurn ? (curTurn.lap || curTurn.n) : null);
 }
 function history(eventId, podId, limit = 300) {
   const x = load(eventId, podId, false);
@@ -99,7 +102,7 @@ function history(eventId, podId, limit = 300) {
     if (r.kind === 'life') txt = `${nm(r.pid)}: ${sg(r.delta)} ${Math.abs(r.delta) === 1 ? 'vida' : 'vidas'} (${r.before_v} → ${r.after_v})`;
     else if (r.kind === 'poison') txt = `${nm(r.pid)}: ${sg(r.delta)} veneno (${r.before_v} → ${r.after_v})`;
     else if (r.kind === 'cmd') txt = `${nm(r.pid)}: ${sg(r.delta)} de comandante de ${nm(r.from_id)} (${r.before_v} → ${r.after_v}; vidas ${r.life_after})`;
-    return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, turn: r.turn_n && r.kind !== 'turn' ? `T${r.turn_n} · ${nm(r.turn_pid)}` : '', undone: !!r.undone, canUndo: ['life', 'poison', 'cmd'].includes(r.kind) && !r.undone };
+    return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, turn: r.turn_n && ['life', 'poison', 'cmd', 'kill'].includes(r.kind) ? `Vuelta ${r.turn_n} · turno de ${nm(r.turn_pid)}` : '', undone: !!r.undone, canUndo: ['life', 'poison', 'cmd'].includes(r.kind) && !r.undone };
   });
 }
 
@@ -182,20 +185,39 @@ function apply(eventId, podId, byId, body) {
       case 'reopen': state.done = null; log('Mesa reabierta'); break;
       // Turnos: «Pasar turno» va al siguiente jugador vivo por orden de asiento; con pid, empieza o corrige el turno
       case 'turn': {
-        const alive = state.players.filter(q => !q.out).sort((a, b) => a.seat - b.seat);
-        if (!alive.length) break;
+        // Turno: «Pasar turno» va al siguiente vivo por orden de asiento; con pid, empieza o corrige.
+        // Vuelta: sube cada vez que el turno vuelve a pasar por quien empezó (los combos de 2 cartas no valen antes de la vuelta 6)
+        const all = state.players.slice().sort((a, b) => a.seat - b.seat);
+        if (!all.some(q => !q.out)) break;
+        const prev = state.turn;
         let next;
         if (body.pid) next = P(body.pid);
-        else if (!state.turn) next = alive[0];
-        else {
-          const all = state.players.slice().sort((a, b) => a.seat - b.seat);
-          const i = all.findIndex(q => q.id === state.turn.pid);
-          next = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out) || alive[0];
-        }
+        else if (!prev) next = all.find(q => !q.out);
+        else { const i = all.findIndex(q => q.id === prev.pid); next = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out); }
         if (next.out) throw new LifeError(`${next.name} está eliminado`);
-        state.turn = { pid: next.id, n: (state.turn ? state.turn.n : 0) + (body.pid && state.turn ? 0 : 1), at: Date.now() };
+        const now = Date.now();
+        let txt = '';
+        if (prev) {
+          const ms = now - prev.at, pp = P(prev.pid);
+          state.tstats = state.tstats || {};
+          const t = state.tstats[prev.pid] = state.tstats[prev.pid] || { n: 0, ms: 0, max: 0 };
+          t.n++; t.ms += ms; t.max = Math.max(t.max, ms);
+          txt = ` (${pp.name} tardó ${mmss(ms)})`;
+        }
+        const first = prev && prev.first ? prev.first : next.id;
+        const rel = id => { const s0 = all.findIndex(q => q.id === first); return (all.findIndex(q => q.id === id) - s0 + all.length) % all.length; };
+        let lap = prev ? (prev.lap || 1) : 1;
+        if (prev && !body.pid && rel(next.id) <= rel(prev.pid)) lap++;
+        state.turn = { pid: next.id, n: prev ? prev.n + 1 : 1, lap, first, at: now };
         curTurn = state.turn;
-        log(`Turno ${state.turn.n}: ${next.name}`, 'turn', next.id);
+        log(`Vuelta ${lap}: turno de ${next.name}${txt}`, 'turn', next.id);
+        break;
+      }
+      case 'lap': { // corregir la vuelta a mano
+        if (!state.turn) throw new LifeError('Primero empieza los turnos');
+        state.turn.lap = Math.max(1, Math.min(99, Number(body.lap) || 1));
+        curTurn = state.turn;
+        log(`Vuelta corregida: ${state.turn.lap}`);
         break;
       }
       case 'turnoff': state.turn = null; log('Sin turnos'); break;
