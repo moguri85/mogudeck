@@ -1634,3 +1634,7 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-bar button, .lf-bar .lf-clock { flex: none; white-space: nowrap; }
 .lf-bar button { padding: 6px 12px; font-size: 13.5px; }
 .lf-menu button.hot { background: #5a1010; border-color: #b42318; }
+.lf-ask { align-items: center; justify-content: center; z-index: 40; }
+.lf-ask .lf-sh-in { max-width: 420px; margin: 0 auto; border-radius: 18px; } .lf-ask p { font: 600 17px/1.4 var(--font); margin: 0 0 14px; color: #111; }
+.lf-ask .lf-endb .jbtn { flex: 1 1 0; border: 0; min-height: 48px; border-radius: 12px; font: 700 16px var(--font); cursor: pointer; }
+.lf-ask .ghost { background: #f0f0f0; color: #111 !important; }

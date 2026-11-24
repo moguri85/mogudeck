@@ -444,7 +444,7 @@
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
       <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
-      ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}</div>`;
+      ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}${asking ? askView() : ''}</div>`;
     bind();
   }
   function bindSetup() {
@@ -475,6 +475,11 @@
       saveCas(); render(); loadArts();
     };
   }
+  // Confirmaciones dentro de la página: el confirm() del navegador, en iPhone, ofrece «Eliminar cuadros de diálogo» y luego ya no deja confirmar nada
+  let asking = null;
+  function ask(text, yes, fn) { menu = false; asking = { text, yes, fn }; render(); }
+  const askView = () => `<div class="lf-sheet lf-ask" role="alertdialog" aria-label="${esc(asking.text)}"><div class="lf-sh-in"><p>${esc(asking.text)}</p>
+    <div class="lf-endb"><button class="jbtn big" data-ask-yes>${esc(asking.yes)}</button><button class="jbtn big ghost" data-ask-no>Cancelar</button></div></div></div>`;
   function bind() {
     root.querySelectorAll('[data-z]').forEach(b => bindStep(b, k => bump(Number(b.dataset.z), Number(b.dataset.d) * k)));
     const on = (sel, fn) => root.querySelectorAll(sel).forEach(b => { b.onclick = () => fn(b); });
@@ -488,12 +493,15 @@
       render();
     });
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
-    on('[data-reset]', () => { if (confirm(CAS ? `¿Reiniciar la partida? Todos vuelven a ${st.start} vidas, mismos jugadores.` : '¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
+    on('[data-reset]', () => ask(CAS ? `¿Reiniciar la partida? Todos vuelven a ${st.start} vidas, mismos jugadores.` : '¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.', 'Reiniciar', () => act({ op: 'reset' })));
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
-    on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; if (on && !confirm('¿Pasar a muerte súbita? El primer daño de un rival elimina.')) return; menu = false; act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; }); });
+    on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; const go = () => act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; });
+      if (on) ask('¿Pasar a muerte súbita? El primer daño de un rival elimina.', 'Muerte súbita', go); else { menu = false; go(); } });
     on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-rematch]', () => act({ op: 'reset' }));
-    on('[data-new]', () => { if (!confirm('¿Empezar otra partida con otros jugadores? Se borra la actual.')) return; menu = false; st = null; hist = null; saveCas(); render(); });
+    on('[data-new]', () => ask('¿Empezar otra partida con otros jugadores? Se borra la actual.', 'Cambiar jugadores', () => { st = null; hist = null; saveCas(); render(); }));
+    on('[data-ask-no]', () => { asking = null; render(); });
+    on('[data-ask-yes]', () => { const a = asking; asking = null; a.fn(); render(); });
     root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = async e => {
       e.preventDefault(); const p = st.players.find(x => x.id === Number(f.dataset.cmdr)); const v = f.cmdr.value.trim();
       if (!v) { p.deck = ''; cmdMsg = null; saveCas(); arts[p.id] = {}; render(); return; }
