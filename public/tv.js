@@ -93,7 +93,7 @@
     } else if (s.kind === 'pods') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Mesas · empieza quien aparece 1º</span><span>${s.t.pending} pendientes${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
         <div class="tv-pods">${s.rows.map(pod => `<div class="tv-pod ${pod.reported ? 'done' : ''}"><div class="tn">${pod.table}</div><div class="who">
-          ${pod.players.map(p => `<span class="${pod.winner === p.id ? 'win' : ''}"><i>${p.seat}º</i>${esc(p.name)}${pod.winner === p.id ? ' 🏆' : ''}</span>`).join('')}${pod.reported ? '' : tags(pod)}</div></div>`).join('')}</div></div>`;
+          ${pod.players.map(p => { const lv = !pod.reported && pod.life && pod.life[p.id]; return `<span class="${pod.winner === p.id ? 'win' : ''} ${lv && lv.out ? 'ko' : ''}"><i>${p.seat}º</i>${esc(p.name)}${pod.winner === p.id ? ' 🏆' : ''}${lv ? `<em class="hp">${lv.out ? '✕' : lv.life}</em>` : ''}</span>`; }).join('')}${pod.reported ? '' : tags(pod)}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'cstand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 'finished' ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
         <table class="tv-stand"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">V-D-E</th></tr></thead><tbody>

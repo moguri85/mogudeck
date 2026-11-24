@@ -1460,3 +1460,57 @@ a.stchip { text-decoration: none !important; }
 .tvm-qr { position: absolute; top: 3vh; right: 3vw; background: #fff; border-radius: 1.4vh; padding: 1vh; text-align: center; color: #111; } .tvm-qr img { width: 14vh; height: 14vh; display: block; } .tvm-qr small { font-weight: 700; font-size: 1.6vh; }
 .cel.bounty .cel-kick { color: #ffd23f; }
 .tbox h3, .ldeck h3, .comm .acard h3 { text-transform: none; letter-spacing: 0; color: #000; }
+.podkills { display: flex; flex-wrap: wrap; gap: 4px 12px; margin: 4px 0 8px; color: #444; }
+
+/* ================= Contador de vidas ================= */
+body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overflow: hidden; -webkit-user-select: none; user-select: none; touch-action: manipulation; }
+.lf { display: flex; flex-direction: column; height: 100dvh; }
+.lf-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; height: 44px; box-sizing: border-box; background: #000; }
+.lf-bar a { color: #fff; text-decoration: none; font-size: 22px; min-width: 36px; min-height: 36px; display: grid; place-items: center; }
+.lf-bar span { flex: 1; font: 600 15px var(--font); color: #ddd; }
+.lf-bar button, .lf-menu button, .lf-who button { background: #1f1f1f; color: #fff; border: 1px solid #333; border-radius: 99px; padding: 8px 14px; font: 600 14px var(--font); min-height: 36px; cursor: pointer; }
+.lf-menu { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 10px; background: #111; border-bottom: 1px solid #222; } .lf-menu .danger { color: #ff8a80; border-color: #5a2a2a; }
+.lf-who { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; background: #2a1600; color: #ffcf99; font-size: 14px; } .lf-who span { width: 100%; }
+.lf-err { padding: 8px 12px; background: #5a1a1a; color: #fff; font-size: 14px; }
+.lf-grid { flex: 1; display: grid; grid-template-columns: 1fr 1fr; grid-auto-rows: 1fr; gap: 4px; padding: 4px; min-height: 0; }
+.lf.n2 .lf-grid { grid-template-columns: 1fr; } .lf.n3 .lf-p:last-child { grid-column: 1 / -1; }
+.lf.n5 .lf-p:last-child { grid-column: 1 / -1; }
+.lf-p { --c: #f47700; position: relative; border-radius: 16px; overflow: hidden; background: var(--c); color: #111; min-height: 0; }
+.lf-p:nth-child(2) { --c: #7b5ea7; color: #fff; } .lf-p:nth-child(3) { --c: #1e9e8f; color: #fff; } .lf-p:nth-child(4) { --c: #e6b422; } .lf-p:nth-child(5) { --c: #d64550; color: #fff; }
+.lf-in { position: absolute; inset: 0; display: flex; flex-direction: column; padding: 8px 10px; }
+.lf-p.rot .lf-in { transform: rotate(180deg); }
+.lf-in header { display: flex; flex-direction: column; align-items: center; text-align: center; line-height: 1.15; } .lf-in header b { font: 700 16px var(--font); } .lf-in header small { font-size: 11px; opacity: .8; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lf-life { position: relative; flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; }
+.lf-life b { font: 800 clamp(56px, 16vmin, 140px)/1 var(--display, var(--font)); font-variant-numeric: tabular-nums; pointer-events: none; z-index: 1; }
+.lf-life em { position: absolute; top: 6%; font-style: normal; font: 800 22px var(--font); padding: 2px 10px; border-radius: 99px; background: rgba(0,0,0,.25); color: #fff; z-index: 2; pointer-events: none; }
+.lz { position: absolute; top: 0; bottom: 0; width: 50%; background: transparent; border: 0; color: inherit; cursor: pointer; -webkit-tap-highlight-color: transparent; display: flex; align-items: center; padding: 0 6%; font: 300 34px var(--font); opacity: .55; }
+.lz.minus { left: 0; justify-content: flex-start; } .lz.plus { right: 0; justify-content: flex-end; } .lz:active { background: rgba(0,0,0,.12); }
+.lf-in footer { display: flex; gap: 6px; justify-content: center; flex-wrap: wrap; }
+.lf-in footer button { background: rgba(0,0,0,.22); color: inherit; border: 0; border-radius: 99px; padding: 6px 12px; font: 600 13px var(--font); min-height: 34px; cursor: pointer; }
+.lf-in footer button i { font-style: normal; background: #000; color: #fff; border-radius: 99px; padding: 0 6px; margin-left: 4px; } .lf-in footer .ghost { background: transparent; text-decoration: underline; }
+.lf-p.out { background: #2a2a2a; color: #aaa; }
+.lf-out { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; } .lf-out b { font: 700 28px var(--font); color: #fff; }
+.lf-out button, .lf-kill .link { background: none; border: 0; color: inherit; text-decoration: underline; font: inherit; min-height: 36px; cursor: pointer; }
+.lf-p.dying { background: #1a1a1a; color: #fff; box-shadow: inset 0 0 0 3px var(--c); }
+.lf-kill { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; overflow: auto; } .lf-kill b { font-size: 16px; }
+.lf-kill div { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lf-kill div button { background: var(--c); color: #111; border: 0; border-radius: 12px; padding: 10px 14px; font: 700 15px var(--font); min-height: 44px; cursor: pointer; } .lf-kill div .ghost { background: #333; color: #fff; }
+.lf-sheet { position: fixed; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: flex-end; z-index: 30; }
+.lf-sh-in { background: #fff; color: #111; width: 100%; max-height: 85dvh; overflow: auto; border-radius: 20px 20px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); }
+.lf-sh-in h2 { margin: 0 0 6px; font: 600 20px var(--display, var(--font)); } .lf-sh-in h3 { margin: 14px 0 6px; font-size: 13px; text-transform: uppercase; letter-spacing: .08em; color: #777; }
+.lf-row { display: grid; grid-template-columns: 1fr 52px 56px 52px; gap: 8px; align-items: center; padding: 4px 0; }
+.lf-row button { height: 48px; border-radius: 12px; border: 1px solid #ddd; background: #f4f4f4; font: 700 24px var(--font); cursor: pointer; } .lf-row b { text-align: center; font: 800 26px var(--font); font-variant-numeric: tabular-nums; } .lf-row b.lethal { color: #c0392b; }
+.lf-sh-in .jbtn { width: 100%; margin-top: 14px; }
+.lf-end { flex: none; display: flex; flex-direction: column; gap: 6px; align-items: center; text-align: center; padding: 12px 14px calc(12px + env(safe-area-inset-bottom)); background: #141414; border-top: 3px solid var(--naranja, #f47700); }
+.lf-end b { font: 700 20px var(--font); color: var(--naranja, #f47700); } .lf-end span { font-size: 14px; color: #ddd; } .lf-end small { color: #aaa; } .lf-end a { color: #fff; }
+.lf-end .jbtn { min-width: 240px; } .lf-end .link { background: none; border: 0; color: #ccc; text-decoration: underline; min-height: 36px; }
+.lf-fin { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; } .lf-fin button { background: #262626; color: #fff; border: 1px solid #444; border-radius: 12px; padding: 10px 14px; font: 600 15px var(--font); min-height: 44px; }
+.lf-pick { max-width: 560px; margin: 0 auto; padding: 24px 16px; } .lf-pick h1 { font: 300 32px var(--display, var(--font)); margin: 0 0 4px; } .lf-pick p { color: #bbb; }
+.lf-pods { display: grid; gap: 8px; } .lf-pods a { display: flex; flex-direction: column; gap: 2px; background: #1a1a1a; border: 1px solid #333; border-radius: 12px; padding: 12px 14px; color: #fff; text-decoration: none; } .lf-pods a span { color: #aaa; font-size: 14px; } .lf-pods a.done { opacity: .5; }
+.lf-note { background: #2a1600; color: #ffcf99 !important; padding: 10px 12px; border-radius: 10px; } .lf-back { display: inline-block; margin-top: 18px; color: #fff; }
+/* Botón para abrir el contador desde la mesa */
+.lifebtn { display: flex; align-items: center; justify-content: center; gap: 8px; margin: 10px 0 4px; background: var(--negro, #111); color: #fff; border-radius: 14px; padding: 12px 16px; font: 700 16px var(--font); text-decoration: none; min-height: 48px; }
+.lifebtn:hover { color: #fff; } .lifebtn b { color: var(--naranja); }
+.tv-pod .who span em.hp { font-style: normal; margin-left: auto; padding-left: 1vh; font-weight: 800; color: var(--accent, #f47700); font-variant-numeric: tabular-nums; }
+.tv-pod .who span.ko { text-decoration: line-through; opacity: .55; }
+.lf .jbtn { display: inline-flex; align-items: center; justify-content: center; background: var(--naranja, #f47700); color: #111; border: 0; border-radius: 999px; padding: 14px 26px; font: 800 18px var(--font); min-height: 52px; cursor: pointer; }

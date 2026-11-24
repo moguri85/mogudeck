@@ -305,6 +305,8 @@ function cmdSnap(id) {
   snap.roster.forEach(s => { s.pkey = k(s.id); });
   snap.profiles = feature('profiles');
   snap.tg = require('../tgbot').enabled();
+  const lives = require('../life').summary((snap.pods || []).map(p => p.id));
+  for (const pod of snap.pods || []) pod.life = lives.get(pod.id) || null;
   return snap;
 }
 
@@ -661,6 +663,42 @@ r.post('/commander/:id/reportar', (req, res) => {
     res.json({ ok: true, tok });
   } catch (e) { res.status(e instanceof C.ClaimError ? 403 : 400).json({ error: e.message }); }
 });
+// ---------- Contador de vidas de la mesa ----------
+const L = require('../life');
+const lifeHits = new Map();
+function lifeSlow(req) {
+  const now = Date.now();
+  const list = (lifeHits.get(req.ip) || []).filter(t => now - t < 60000);
+  list.push(now); lifeHits.set(req.ip, list);
+  return list.length > 300;
+}
+r.get('/commander/:id/vidas', (req, res) => {
+  const ev = C.getEvent(Number(req.params.id));
+  if (!ev || !ev.public) return res.status(404).send(String(publicPage('No encontrado', html`<p>Torneo no encontrado.</p>`)));
+  const snap = cmdSnap(ev.id);
+  res.send(String(html`${head('Contador de vidas', settings(), raw('<meta name="theme-color" content="#0d0d0d">'))}<body class="lifep">
+    <div id="life" data-id="${ev.id}"></div>
+    <script>window.__LSNAP = ${json({ id: ev.id, name: ev.name, status: ev.status, round: snap.round, pods: snap.pods.map(p => ({ id: p.id, table: p.table, reported: p.reported, players: p.players.map(x => ({ id: x.id, name: x.name, deck: x.deck, seat: x.seat })) })), roster: snap.roster.map(x => ({ id: x.id, name: x.name, username: x.username, pkey: x.pkey })), pod: Number(req.query.mesa) || null })};</script>
+    <script src="/static/ui.js"></script><script src="/static/life.js"></script></body></html>`));
+});
+r.get('/commander/:id/vidas/:pod.json', (req, res) => {
+  try { res.set('Cache-Control', 'no-store').json(L.view(Number(req.params.id), Number(req.params.pod))); }
+  catch (e) { res.status(e instanceof L.LifeError ? 400 : 500).json({ error: e.message }); }
+});
+r.post('/commander/:id/vidas/:pod', (req, res) => {
+  if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiados toques seguidos: espera un momento' });
+  const ev = C.getEvent(Number(req.params.id));
+  if (!ev || !ev.public) return res.status(404).json({ error: 'no encontrado' });
+  try {
+    const by = Number(req.body.by);
+    const tok = claimFor(req, res, ev.id, by);
+    const op = String(req.body.op || '');
+    const out = op === 'finish' ? L.finish(ev.id, Number(req.params.pod), by, req.body.winner) : L.apply(ev.id, Number(req.params.pod), by, { ...req.body, op });
+    if (['kill', 'revive', 'finish', 'reset'].includes(op)) { C.activity(ev.id, by, 'contador', `mesa ${out.table}: ${op}${req.body.pid ? ' ' + req.body.pid : ''}`, req); require('../rivals').invalidate(); }
+    res.json({ ...out, tok });
+  } catch (e) { res.status(e instanceof C.ClaimError ? 403 : e instanceof L.LifeError ? 400 : 500).json({ error: e.message }); }
+});
+
 r.post('/commander/:id/mazo', (req, res) => {
   if (slowDown(req)) return res.status(429).json({ error: 'Demasiadas peticiones, espera un momento' });
   const ev = C.getEvent(Number(req.params.id));
@@ -747,6 +785,7 @@ r.get('/tv.json', (req, res) => {
     ...C.snapshot(e.id), color: '#7b5ea7', gameLabel: 'Commander',
     qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/commander/' + e.id)),
   }));
+  for (const t of cmd) { const lv = require('../life').summary((t.pods || []).map(p => p.id)); for (const pod of t.pods || []) pod.life = lv.get(pod.id) || null; }
   const upcoming = data.upcomingTournaments(6).map(t => ({
     id: t.id, name: t.name, game: t.game, gameLabel: melee.gameInfo(t.game).short, color: melee.gameInfo(t.game).color,
     date: fmtDate(t.start_date), qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/t/' + t.id)),

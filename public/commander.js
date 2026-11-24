@@ -45,6 +45,10 @@
       main = `<div class="me-table"><span>Mesa</span><b>${pod.table}</b></div>
         <div class="me-vs"><small>${snap.roundKind === 'final' ? 'Mesa final' : `Ronda ${snap.round}`} · ${mine.seat === 1 ? 'empiezas tú' : `tu turno: ${mine.seat}º de ${pod.size}`}</small>
         <div class="me-rivals">${pod.players.filter(x => x.id !== me.id).map(x => `<span>${turn(x.seat)} · <b>${esc(x.name)}</b> <em>${x.pts} pts${x.deck ? ' · ' + esc(x.deck) : ''}</em></span>`).join('')}</div>${status}</div>`;
+      if (!pod.reported && snap.status === 'running') {
+        const lv = pod.life ? Object.values(pod.life).filter(x => !x.out).length : 0;
+        main += `<a class="lifebtn" href="${B}/commander/${id}/vidas?mesa=${pod.id}">${pod.life ? `Contador de vidas · <b>${lv} en pie</b>` : 'Abrir contador de vidas'}</a>`;
+      }
       if (!pod.reported && snap.selfReport && byPlaces()) {
         const nm = id => esc((pod.players.find(x => x.id === id) || {}).name || '');
         const ord = state.order[pod.id] || [];

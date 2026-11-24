@@ -30,18 +30,24 @@ function build() {
   const pods = db.prepare(`SELECT pd.*, rd.number rnum, rd.created_at rat, e.id eid, e.name ename, e.start_date, e.created_at FROM cmd_pods pd
     JOIN cmd_rounds rd ON rd.id = pd.round_id JOIN cmd_events e ON e.id = rd.event_id WHERE pd.reported = 1 AND e.public = 1`).all();
   const seatQ = db.prepare('SELECT s.place, p.id, p.name, p.username, p.person_key FROM cmd_seats s JOIN cmd_players p ON p.id = s.player_id WHERE s.pod_id = ?');
+  // Con el contador de vidas se sabe quién elimina a quién: eso manda sobre el puesto final
+  const kills = require('./life').killsByPod();
   for (const pd of pods) {
     const seats = seatQ.all(pd.id).map(s => ({ ...s, key: people.cmdKey(s, idx), place: s.place || (pd.winner_id === s.id ? 1 : null) }));
     for (let x = 0; x < seats.length; x++) for (let y = x + 1; y < seats.length; y++) {
       const A = seats[x], B = seats[y];
       if (A.key === B.key) continue;
       let ra = 'N';
-      if (pd.is_draw) ra = 'D';
+      const kl = kills.get(pd.id);
+      if (kl && kl.length) {
+        if (kl.some(k => k.victim_id === B.id && k.killer_id === A.id)) ra = 'W';
+        else if (kl.some(k => k.victim_id === A.id && k.killer_id === B.id)) ra = 'L';
+      } else if (pd.is_draw) ra = 'D';
       else if (A.place && B.place) ra = A.place < B.place ? 'W' : A.place > B.place ? 'L' : 'D';
       else if (pd.winner_id === A.id) ra = 'W';
       else if (pd.winner_id === B.id) ra = 'L';
       out.push({ a: A.key, b: B.key, ra, game: 'commander', source: 'commander', eventId: pd.eid, event: pd.ename,
-        href: `/commander/${pd.eid}`, date: pd.start_date || pd.created_at, at: pd.rat, round: pd.rnum, table: pd.table_number, podSize: pd.size });
+        href: `/commander/${pd.eid}`, date: pd.start_date || pd.created_at, at: pd.rat, round: pd.rnum, table: pd.table_number, podSize: pd.size, podKills: !!(kl && kl.length), kill: !!(kl && kl.length && ra !== 'N') });
     }
   }
   return out;

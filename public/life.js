@@ -1,0 +1,179 @@
+(function () {
+  const root = document.getElementById('life');
+  if (!root) return;
+  const { esc, norm, store } = window.UI;
+  const B = window.__BASE || '';
+  const S = window.__LSNAP;
+  const id = S.id;
+  let me = null, pod = null, st = null, ver = 0, info = {}, busy = 0, err = '';
+  let rot = store.get('mt_life_rot') !== '0';
+  const dismissed = new Set();
+  const bubbles = {};
+  let menu = false, sheet = null, finishPick = null;
+
+  function resolveMe() {
+    const acc = window.__ME;
+    if (acc) { const m = S.roster.find(p => p.pkey && p.pkey === acc.key); if (m) return m; }
+    const saved = store.get('mt_me_user');
+    return saved ? S.roster.find(p => norm(p.username) === norm(saved) || norm(p.name) === norm(saved)) || null : null;
+  }
+  me = resolveMe();
+  pod = S.pods.find(p => p.id === S.pod) || (me && S.pods.find(p => p.players.some(x => x.id === me.id))) || null;
+  const mine = () => !!(me && pod && pod.players.some(x => x.id === me.id));
+  const nm = pid => esc(((st && st.players.find(p => p.id === pid)) || {}).name || '—');
+  const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
+  const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', otro: 'otra forma' };
+
+  async function post(body) {
+    const tk = `mt_tok_${id}_${me.id}`;
+    const t = store.get(tk);
+    const r = await fetch(`${B}/commander/${id}/vidas/${pod.id}`, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ ...body, by: me.id, ...(t ? { tok: t } : {}) }) });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) throw new Error(j.error || 'No se pudo guardar');
+    if (j.tok) store.set(tk, j.tok);
+    return j;
+  }
+  function take(j) { if (j && j.state && j.version >= ver) { st = j.state; ver = j.version; info = j; } }
+  async function act(body, optimistic) {
+    if (!mine()) { err = 'Para anotar, di quién eres (arriba).'; render(); return; }
+    if (optimistic) { optimistic(); render(); }
+    busy++;
+    try { take(await post(body)); err = ''; } catch (e) { err = e.message; await load(true); }
+    busy--; render();
+  }
+  async function load(force) {
+    if (!pod) return;
+    try {
+      const r = await fetch(`${B}/commander/${id}/vidas/${pod.id}.json`, { cache: 'no-store' });
+      const j = await r.json();
+      if (!r.ok) { err = j.error || 'Error'; render(); return; }
+      if (force || (!busy && j.version !== ver)) { st = j.state; ver = j.version; info = j; render(); }
+    } catch (e) { /* sin conexión: se reintenta */ }
+  }
+
+  // Toques: mitad izquierda resta, mitad derecha suma; si mantienes pulsado, repite
+  function bump(pid, d) {
+    const p = st.players.find(x => x.id === pid);
+    if (!p || p.out || st.done) return;
+    p.life += d;
+    const b = bubbles[pid] = bubbles[pid] || { v: 0, t: null };
+    b.v += d; clearTimeout(b.t); b.t = setTimeout(() => { delete bubbles[pid]; render(); }, 1400);
+    if (navigator.vibrate) navigator.vibrate(6);
+    if (p.life > 0) dismissed.delete(pid);
+    act({ op: 'life', pid, d });
+  }
+  let hold = null;
+  function bindHold(el, fn) {
+    const stop = () => { clearTimeout(hold); clearInterval(hold); hold = null; };
+    el.addEventListener('pointerdown', e => { e.preventDefault(); fn(); hold = setTimeout(() => { hold = setInterval(fn, 140); }, 450); });
+    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => el.addEventListener(ev, stop));
+  }
+
+  function pickPodView() {
+    return `<div class="lf-pick"><h1>Contador de vidas</h1><p>${esc(S.name)} · ronda ${S.round || '—'}</p>
+      ${S.status !== 'running' ? '<p class="lf-note">El contador se abre cuando el torneo está en juego.</p>' : ''}
+      ${S.pods.length ? `<p>¿Cuál es tu mesa?</p><div class="lf-pods">${S.pods.map(p => `<a href="?mesa=${p.id}" class="${p.reported ? 'done' : ''}"><b>Mesa ${p.table}</b><span>${p.players.map(x => esc(x.name)).join(' · ')}</span></a>`).join('')}</div>` : ''}
+      <a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`;
+  }
+  function whoView() {
+    return `<div class="lf-who"><span>¿Quién eres? (para poder anotar)</span>${pod.players.map(x => `<button data-me="${x.id}">${esc(x.name)}</button>`).join('')}</div>`;
+  }
+  function panel(p, i, n) {
+    const top = rot && n >= 3 && i < Math.floor(n / 2);
+    const isDead = dead(p) && !dismissed.has(p.id);
+    const cmdMax = Math.max(0, ...Object.values(p.cmd));
+    const bub = bubbles[p.id];
+    const others = st.players.filter(x => x.id !== p.id);
+    return `<section class="lf-p ${top ? 'rot' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''}" style="--i:${i}">
+      <div class="lf-in">
+        <header><b>${esc(p.name)}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
+        ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
+        : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
+            <button data-kill="${p.id}" data-by="" class="ghost">Nadie · se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
+        : `<div class="lf-life"><button class="lz minus" data-z="${p.id}" data-d="-1" aria-label="Quitar una vida a ${esc(p.name)}"><span>−</span></button>
+            <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : ''}
+            <button class="lz plus" data-z="${p.id}" data-d="1" aria-label="Sumar una vida a ${esc(p.name)}"><span>+</span></button></div>`}
+        <footer><button data-sheet="${p.id}">Comandante${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
+          ${!p.out && !isDead ? `<button data-kill-open="${p.id}" class="ghost">Eliminar</button>` : ''}</footer>
+      </div></section>`;
+  }
+  function sheetView() {
+    const p = st.players.find(x => x.id === sheet);
+    if (!p) return '';
+    const row = (label, op, extra, val, max) => `<div class="lf-row"><span>${label}</span><button data-op="${op}" ${extra} data-d="-1">−</button><b class="${val >= max ? 'lethal' : ''}">${val}</b><button data-op="${op}" ${extra} data-d="1">+</button></div>`;
+    return `<div class="lf-sheet" role="dialog" aria-label="Daño a ${esc(p.name)}"><div class="lf-sh-in"><h2>Daño que recibe ${esc(p.name)}</h2>
+      <h3>Daño de comandante (21 elimina)</h3>${st.players.filter(x => x.id !== p.id).map(o => row(`de ${esc(o.name)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}"`, p.cmd[o.id] || 0, 21)).join('')}
+      <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
+      <p class="small">El daño de comandante también resta vidas.</p><button class="jbtn big" data-close>Hecho</button></div></div>`;
+  }
+  function endView() {
+    const alive = st.players.filter(p => !p.out);
+    if (st.done) {
+      const ord = st.done.order.map((pid, i) => `${i + 1}º ${nm(pid)}`).join(' · ');
+      return `<div class="lf-end done"><b>${info.reported ? 'Resultado anotado ✔' : st.done.auto ? 'Resultado anotado ✔' : 'Resultado enviado'}</b><span>${ord}</span>${!info.reported && !st.done.auto ? '<small>Falta que lo confirme la tienda.</small>' : ''}
+        <a href="${B}/commander/${id}">Volver al torneo</a></div>`;
+    }
+    if (alive.length === 1 && !st.players.some(p => dead(p) && !dismissed.has(p.id))) {
+      return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>Puestos: ${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
+        <button class="jbtn big" data-finish="">Enviar resultado</button></div>`;
+    }
+    if (finishPick) {
+      return `<div class="lf-end"><b>Fin por tiempo: ¿quién gana la mesa?</b><span>El resto queda por vidas y los eliminados por orden inverso.</span>
+        <div class="lf-fin">${alive.map(p => `<button data-finish="${p.id}">${esc(p.name)} (${p.life})</button>`).join('')}</div><button class="link" data-fin-cancel>Cancelar</button></div>`;
+    }
+    return '';
+  }
+
+  function render() {
+    if (!pod) { root.innerHTML = pickPodView(); return; }
+    if (!st) { root.innerHTML = `<div class="lf-pick"><p>Cargando la mesa ${pod.table}…</p>${err ? `<p class="lf-note">${esc(err)}</p>` : ''}<a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`; return; }
+    const n = st.players.length;
+    root.innerHTML = `<div class="lf ${rot ? 'rotm' : ''} n${n}">
+      <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · solo mirando' : ''}</span>
+        <button data-menu aria-expanded="${menu}">Opciones</button></div>
+      ${menu ? `<div class="lf-menu"><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
+        ${mine() && !st.done ? '<button data-fin-open>Fin por tiempo</button><button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
+        <button data-whoami>Cambiar quién soy</button></div>` : ''}
+      ${!mine() ? whoView() : ''}
+      ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
+      <div class="lf-grid">${st.players.map((p, i) => panel(p, i, n)).join('')}</div>
+      ${endView()}${sheet ? sheetView() : ''}</div>`;
+    bind();
+  }
+  function bind() {
+    root.querySelectorAll('[data-z]').forEach(b => bindHold(b, () => bump(Number(b.dataset.z), Number(b.dataset.d))));
+    const on = (sel, fn) => root.querySelectorAll(sel).forEach(b => { b.onclick = () => fn(b); });
+    on('[data-me]', b => { const p = S.roster.find(x => x.id === Number(b.dataset.me)); me = p; store.set('mt_me_user', p.username || p.name); err = ''; render(); });
+    on('[data-menu]', () => { menu = !menu; render(); });
+    on('[data-rot]', () => { rot = !rot; store.set('mt_life_rot', rot ? '1' : '0'); menu = false; render(); });
+    on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
+    on('[data-reset]', () => { if (confirm('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
+    on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
+    on('[data-fin-open]', () => { menu = false; finishPick = true; render(); });
+    on('[data-fin-cancel]', () => { finishPick = null; render(); });
+    on('[data-finish]', b => act({ op: 'finish', winner: b.dataset.finish || '' }).then(() => { finishPick = null; }));
+    on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
+    on('[data-close]', () => { sheet = null; render(); });
+    on('.lf-sheet', b => {}); // el fondo no cierra para no perder toques
+    root.querySelectorAll('.lf-sheet [data-op]').forEach(b => bindHold(b, () => {
+      const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
+      if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d }); }
+      else { p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d }); }
+      if (navigator.vibrate) navigator.vibrate(6);
+    }));
+    on('[data-kill]', b => { const pid = Number(b.dataset.kill), by = b.dataset.by; const p = st.players.find(x => x.id === pid);
+      const how = !by ? 'concede' : (p.cmd[by] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
+      act({ op: 'kill', pid, killer: by, how }, () => { p.out = true; p.killer = by ? Number(by) : null; p.how = how; p.ord = st.players.filter(x => x.out).length; }); });
+    on('[data-kill-open]', b => { const p = st.players.find(x => x.id === Number(b.dataset.killOpen)); dismissed.delete(p.id); if (p.life > 0) p.life = 0; render(); });
+    on('[data-alive]', b => { dismissed.add(Number(b.dataset.alive)); load(true); render(); });
+    on('[data-revive]', b => act({ op: 'revive', pid: Number(b.dataset.revive) }));
+  }
+
+  // Pantalla siempre encendida mientras se juega
+  let lock = null;
+  async function wake() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen'); } catch (e) { /* no disponible */ } }
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); load(true); } });
+  wake();
+  render();
+  if (pod) { load(true); setInterval(() => load(false), 1500); }
+})();

@@ -112,7 +112,7 @@ r.get('/vs/:a/:b', (req, res) => {
     ${tag ? html`<p class="nemtag">${tag}</p>` : ''}
     ${h.list.length ? html`<section><h2 class="sec">Enfrentamientos (${h.list.length})</h2><div class="results">${h.list.map(e => html`<a class="rrow vsrow" href="${e.href}" style="--g:${gColor(e.game)}">
       <span class="r-date">${shortDate(e.date)}</span>${gchip(e.game)}<span class="r-name">${e.event}<small class="muted"> · ${e.round ? `ronda ${e.round}` : ''}${e.table ? ` · mesa ${e.table}` : ''}${e.podSize ? ` · mesa de ${e.podSize}` : ''}</small></span>
-      <span class="vsres ${RES[e.r][1]}">${e.r === 'N' ? 'Ganó otro' : `${na.split(' ')[0]} ${RES[e.r][0]}`}${e.score ? ` ${e.score}` : ''}</span><span class="r-go">→</span></a>`)}</div></section>`
+      <span class="vsres ${RES[e.r][1]}">${e.kill ? (e.r === 'W' ? `${na.split(' ')[0]} elimina a ${nb.split(' ')[0]}` : `${nb.split(' ')[0]} elimina a ${na.split(' ')[0]}`) : e.r === 'N' ? (e.podKills ? 'Sin cruce directo' : 'Ganó otro') : `${na.split(' ')[0]} ${RES[e.r][0]}`}${e.score ? ` ${e.score}` : ''}</span><span class="r-go">→</span></a>`)}</div></section>`
       : html`<p class="muted">Todavía no se han enfrentado en un torneo de la tienda.</p>`}`));
 });
 
@@ -181,7 +181,7 @@ r.get('/logros', (req, res) => {
   res.send(page('Logros', html`<h1>Logros y niveles</h1>${commTabs('logros')}
     ${st ? html`${levelCard(st)}<h2 class="sec">Tus insignias</h2>${badgeGrid(st)}` : loginHint(req, 'Entra en tu cuenta para ver tu nivel y tus insignias. Si ya has jugado en la tienda, une tu ficha y contarán todos tus torneos.')}
     <details class="xphelp"><summary>Cómo se gana experiencia</summary><ul>
-      <li>Cada torneo jugado: <b>${badges.XP.event} XP</b>. Cada partida ganada: <b>${badges.XP.matchWin}</b>. Cada mesa de Commander ganada: <b>${badges.XP.podWin}</b>.</li>
+      <li>Cada torneo jugado: <b>${badges.XP.event} XP</b>. Cada partida ganada: <b>${badges.XP.matchWin}</b>. Cada mesa de Commander ganada: <b>${badges.XP.podWin}</b>. Cada jugador que eliminas (contador de vidas): <b>${badges.XP.kill}</b>.</li>
       <li>Podio: <b>${badges.XP.podium} XP</b>. Torneo ganado: <b>${badges.XP.title} XP</b>.</li>
       <li>Punto de porra: <b>${badges.XP.porraPoint} XP</b>. Recompensa cobrada: <b>${badges.XP.bounty} XP</b>. Mazo prestado y devuelto: <b>${badges.XP.loan} XP</b>. Foto publicada en la TV: <b>${badges.XP.moment} XP</b>. Cartas en Tengo / Busco: <b>${badges.XP.trade} XP</b> cada una (hasta 50).</li></ul></details>
     <section><h2 class="sec">Ranking de experiencia</h2>

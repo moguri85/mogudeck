@@ -118,6 +118,11 @@ function eventForm(ev, action) {
     </fieldset>
     <label class="check-inline"><input type="checkbox" name="public" value="1" ${ev.public ?? 1 ? 'checked' : ''}> Visible en la web pública y la TV</label>
     <label class="check-inline"><input type="checkbox" name="self_report" value="1" ${ev.self_report ?? 1 ? 'checked' : ''}> Los jugadores pueden reportar el resultado desde el móvil (la tienda lo confirma)</label>
+    <fieldset class="full"><legend>Contador de vidas</legend>
+      <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
+      <label>Vidas iniciales<select name="life_start">${[40, 30, 25, 20].map(n => html`<option value="${n}" ${(ev.life_start || 40) === n ? 'selected' : ''}>${n}</option>`)}</select></label>
+      <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
+    </fieldset>
     <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="4">${ev.info || ''}</textarea></label>
     <div class="full"><button class="btn">Guardar</button></div></form>
     <script>(function(){var f=document.currentScript.previousElementSibling.querySelector('[data-scoring]');if(!f)return;
@@ -137,6 +142,10 @@ function eventParams(b) {
     (String(b.pts_places || '').split(/[,;\s]+/).map(Number).filter(n => Number.isFinite(n) && n >= 0).slice(0, 5).join(',')) || '3,2,1,0',
     [2, 3, 4].includes(Number(b.bracket_max)) ? Number(b.bracket_max) : null, b.legal_check ? 1 : 0,
     b.self_signup ? 1 : 0, Number(b.max_players) > 0 ? Math.min(Math.round(Number(b.max_players)), 500) : null];
+}
+function saveLife(id, b) {
+  require('../life');
+  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, id);
 }
 const ptsN = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.min(Math.max(Math.round(Number(v)), 0), 20));
 
@@ -203,6 +212,7 @@ r.post('/', (req, res) => {
     three_pods, tiebreak, final_top4, price_cents, public, info, self_report, budget_cents, budget_ex_basics, budget_ex_commander, budget_lock,
     scoring, pts_win4, pts_win3, pts_loss, pts_places, bracket_max, legal_check, self_signup, max_players)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(...eventParams(req.body)).lastInsertRowid;
+  saveLife(id, req.body);
   back(res, `/admin/commander/${id}`, 'Evento creado');
 });
 
@@ -216,12 +226,15 @@ function podCard(ev, pod, { editable = true, swappable = false } = {}) {
   const proposal = pod.proposed_at && !pod.reported ? html`<div class="proposal">📱 ${nameOf(pod.proposed_by)} dice: <b>${said}</b>
     <form method="post" action="${base(ev)}/mesa/${pod.id}/propuesta" class="inline"><button name="accion" value="confirmar" class="btn small">Confirmar</button>
     <button name="accion" value="rechazar" class="btn small ghost">Rechazar</button></form></div>` : '';
+  const kl = require('../life').killsOf(pod.id);
+  const lifeOn = db.prepare('SELECT 1 FROM cmd_life WHERE pod_id = ?').get(pod.id);
+  const kills = kl.length || lifeOn ? html`<div class="podkills small">${lifeOn ? html`<span class="pill">Contador de vidas</span> ` : ''}${kl.map(k => html`<span>${k.killer_id ? html`<b>${nameOf(k.killer_id)}</b> eliminó a ${nameOf(k.victim_id)}` : html`${nameOf(k.victim_id)} quedó fuera`}</span>`)}</div>` : '';
   const pts = p => (pod.reported ? C.pointsFor(ev, pod, p.place || (winner === p.id ? 1 : null)) : null);
   const head = byPlaces ? `${pod.size} jugadores · ${C.placesList(ev).slice(0, pod.size).join('-')} pts`
     : `${pod.size} jugadores · ganador ${pod.size >= 4 ? ev.pts_win4 ?? 4 : ev.pts_win3 ?? 3} pts`;
   if (byPlaces) {
     const opts = p => [html`<option value="">—</option>`, ...Array.from({ length: pod.size }, (_, i) => html`<option value="${i + 1}" ${p.place === i + 1 && pod.reported && !pod.is_draw ? 'selected' : ''}>${i + 1}º</option>`)];
-    return html`<div class="pod ${pod.reported ? 'reported' : ''} ${proposal ? 'proposed' : ''}" id="pod-${pod.id}">${proposal}
+    return html`<div class="pod ${pod.reported ? 'reported' : ''} ${proposal ? 'proposed' : ''}" id="pod-${pod.id}">${proposal}${kills}
       <div class="pod-head"><b>Mesa ${pod.table_number}</b><span class="muted">${head}</span>
         ${pod.reported ? html`<span class="ok">${pod.is_draw ? 'Empate' : '✔'}</span>` : html`<span class="warn">pendiente</span>`}</div>
       <form method="post" action="${base(ev)}/mesa/${pod.id}" class="pod-form places" data-places>
@@ -234,7 +247,7 @@ function podCard(ev, pod, { editable = true, swappable = false } = {}) {
           <small class="muted">Toca los nombres por orden de llegada (1º, 2º…) o elige el puesto. Sin empates: se decide siempre (dado si hace falta).</small>` : ''}
       </form></div>`;
   }
-  return html`<div class="pod ${pod.reported ? 'reported' : ''} ${proposal ? 'proposed' : ''}" id="pod-${pod.id}">${proposal}
+  return html`<div class="pod ${pod.reported ? 'reported' : ''} ${proposal ? 'proposed' : ''}" id="pod-${pod.id}">${proposal}${kills}
     <div class="pod-head"><b>Mesa ${pod.table_number}</b><span class="muted">${head}</span>
       ${pod.reported ? html`<span class="ok">${pod.is_draw ? 'Empate' : '✔'}</span>` : html`<span class="warn">pendiente</span>`}</div>
     <form method="post" action="${base(ev)}/mesa/${pod.id}" class="pod-form">
@@ -445,6 +458,7 @@ r.post('/:id/ajustes', (req, res) => {
   db.prepare(`UPDATE cmd_events SET name=?, start_date=?, melee_tournament_id=?, rounds_planned=?, round_minutes=?, draw_points=?,
     three_pods=?, tiebreak=?, final_top4=?, price_cents=?, public=?, info=?, self_report=?, budget_cents=?, budget_ex_basics=?, budget_ex_commander=?, budget_lock=?,
     scoring=?, pts_win4=?, pts_win3=?, pts_loss=?, pts_places=?, bracket_max=?, legal_check=?, self_signup=?, max_players=? WHERE id = ?`).run(...eventParams(req.body), ev.id);
+  saveLife(ev.id, req.body);
   const up = C.promoteWaitlist(ev.id);
   if (up.length) notifyPromoted(req, C.getEvent(ev.id), up);
   back(res, req.query.volver === 'lista' ? '/admin/commander' : base(ev), 'Guardado');

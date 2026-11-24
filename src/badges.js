@@ -14,6 +14,7 @@ const BADGES = [
   { id: 'poliglota', name: 'Políglota', desc: 'Juegos distintos jugados en torneo', tiers: [2, 3, 4], unit: 'juegos' },
   { id: 'milcaras', name: 'Mil caras', desc: 'Comandantes distintos en Commander', tiers: [3, 7, 15], unit: 'comandantes' },
   { id: 'conpoco', name: 'Con poco', desc: 'Mesas de Commander ganadas con un mazo de menos de 50 €', tiers: [1, 3, 10], unit: 'mesas' },
+  { id: 'verdugo', name: 'Verdugo', desc: 'Jugadores eliminados en mesas de Commander (contador de vidas)', tiers: [5, 20, 50], unit: 'eliminaciones' },
   { id: 'matagigantes', name: 'Matagigantes', desc: 'Victorias contra jugadores que han ganado un torneo', tiers: [1, 5, 15], unit: 'victorias' },
   { id: 'cazador', name: 'Cazarrecompensas', desc: 'Recompensas cobradas', tiers: [1, 3, 5], unit: 'recompensas' },
   { id: 'sebusca', name: 'Se busca', desc: 'Veces con recompensa sobre tu cabeza', tiers: [1, 3, 5], unit: 'veces' },
@@ -23,7 +24,7 @@ const BADGES = [
   { id: 'reportero', name: 'Reportero', desc: 'Fotos publicadas en la TV', tiers: [1, 5, 15], unit: 'fotos' },
 ];
 const TIER = ['', 'Bronce', 'Plata', 'Oro'];
-const XP = { event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
+const XP = { kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
 const RANKS = [[1, 'Novato'], [3, 'Aprendiz'], [5, 'Habitual'], [8, 'Veterano'], [12, 'Maestro'], [17, 'Leyenda']];
 const needFor = L => 25 * (L - 1) * L; // XP total para llegar al nivel L
 function levelOf(xp) {
@@ -53,6 +54,7 @@ function build() {
       enc.get(me).push({ ...e, opp, r });
     }
   }
+  const killsBy = new Map(db.prepare('SELECT p.id, COUNT(*) n FROM cmd_kills k JOIN cmd_players p ON p.id = k.killer_id GROUP BY p.id').all().map(r => [r.id, r.n]));
   const bountyClaims = new Map(db.prepare("SELECT claimed_key k, COUNT(*) n FROM bounties WHERE status IN ('claimed','delivered') GROUP BY claimed_key").all().map(r => [r.k, r.n]));
   const bountyOn = new Map(db.prepare("SELECT person_key k, COUNT(*) n FROM bounties WHERE status != 'cancelled' GROUP BY person_key").all().map(r => [r.k, r.n]));
   const accRows = db.prepare('SELECT id, name, nick FROM accounts').all();
@@ -93,12 +95,13 @@ function build() {
       poliglota: new Set(list.map(e => e.game)).size,
       milcaras: new Set(cmdList.map(e => String(e.deck || '').trim().toLowerCase()).filter(Boolean)).size,
       conpoco: cmdList.reduce((s, e) => s + (cheapWin.get(e.playerId) || 0), 0),
+      verdugo: cmdList.reduce((s, e) => s + (killsBy.get(e.playerId) || 0), 0),
       matagigantes: es.filter(e => e.r === 'W' && champions.has(e.opp) && e.opp !== key).length,
       cazador: bountyClaims.get(key) || 0, sebusca: bountyOn.get(key) || 0,
       adivino: acc ? porra.get(acc.id) || 0 : 0, mecenas: acc ? loans.get(acc.id) || 0 : 0,
       comerciante: acc ? trades.get(acc.id) || 0 : 0, reportero: acc ? moms.get(acc.id) || 0 : 0,
     };
-    const xp = list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
+    const xp = v.verdugo * XP.kill + list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
       + v.adivino * XP.porraPoint + v.cazador * XP.bounty + v.mecenas * XP.loan + v.reportero * XP.moment + Math.min(v.comerciante, 50) * XP.trade;
     const badges = BADGES.map(b => {
       const val = v[b.id] || 0;
