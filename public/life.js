@@ -140,8 +140,8 @@
     const first = (hist || []).find(h => h.canUndo);
     return `<div class="lf-sheet" role="dialog" aria-label="Historial de la mesa"><div class="lf-sh-in"><h2>Historial de la mesa</h2>
       <p class="small">Los toques seguidos sobre el mismo contador se juntan en un apunte (si das 5 y quitas 1, queda −4). Se guarda todo por si hay alguna duda.</p>
-      ${!hist ? '<p>Cargando…</p>' : !hist.length ? '<p>Aún no hay cambios.</p>' : `<ol class="lf-hist">${hist.map(h => `<li class="${h.undone ? 'undone' : ''} k-${h.kind}"><time>${hhmmss(h.updated || h.at)}</time><span>${esc(h.txt)}${h.by ? ` <small>· ${esc(h.by)}</small>` : ''}</span>
-        ${mine() && first && h.id === first.id && !st.done ? `<button data-undo="${h.id}">Deshacer</button>` : ''}</li>`).join('')}</ol>`}
+      ${!hist ? '<p>Cargando…</p>' : !hist.length ? '<p>Aún no hay cambios.</p>' : `<ol class="lf-hist">${hist.map(h => `<li class="${h.undone ? 'undone' : ''} k-${h.kind}"><time>${hhmmss(h.updated || h.at)}</time><span>${esc(h.txt)}</span><small class="by">${h.by ? esc(h.by) : ''}</small>
+        ${mine() && first && h.id === first.id && !st.done ? `<button data-undo="${h.id}">Deshacer</button>` : '<i></i>'}</li>`).join('')}</ol>`}
       <button class="jbtn big" data-close-hist>Cerrar</button></div></div>`;
   }
   function endView() {

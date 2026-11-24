@@ -1560,3 +1560,5 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-hist button { border: 1px solid #ddd; background: #f4f4f4; border-radius: 99px; padding: 6px 12px; font: 600 13px var(--font); cursor: pointer; }
 .lf-sh-in { max-height: 92%; } .lf-hist { max-height: none; }
 .lf-sh-in h2 { text-transform: none; letter-spacing: 0; }
+.lf-hist li { grid-template-columns: auto 1fr auto auto; } .lf-hist .by { color: #999; font-size: 12px; text-align: right; white-space: nowrap; }
+.lf-hist li { grid-template-columns: auto 1fr auto 92px; } .lf-hist li > button { justify-self: end; }

@@ -701,8 +701,8 @@ r.get('/:id/mesa/:pod/historial', (req, res) => {
   res.send(String(adminPage(req, `Historial · mesa ${pod ? pod.table_number : ''}`, html`
     <p><a href="${base(ev)}#pod-${Number(req.params.pod)}">← Volver al torneo</a> · <a href="/commander/${ev.id}/vidas?mesa=${Number(req.params.pod)}" target="_blank">Abrir el contador</a></p>
     <p class="small muted">Cada fila es un apunte: los toques seguidos de una misma persona sobre el mismo contador se juntan (si daban 5 y quitaban 1, queda −4). Lo tachado se deshizo. Hora de la última modificación de cada apunte; «quién» es el móvil que lo anotó.</p>
-    ${items.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Hora</th><th>Cambio</th><th>Quién lo anotó</th></tr></thead><tbody>
-      ${items.map(h => html`<tr class="${h.undone ? 'dim' : ''}"><td class="nowrap small">${t(h.updated || h.at)}</td><td>${h.undone ? html`<s>${h.txt}</s>` : h.kind === 'kill' || h.kind === 'finish' ? html`<b>${h.txt}</b>` : h.txt}</td><td class="small">${h.by}</td></tr>`)}
+    ${items.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Hora</th><th>Cambio</th><th class="num">Anotado por</th></tr></thead><tbody>
+      ${items.map(h => html`<tr class="${h.undone ? 'dim' : ''}"><td class="nowrap small">${t(h.updated || h.at)}</td><td>${h.undone ? html`<s>${h.txt}</s>` : h.kind === 'kill' || h.kind === 'finish' ? html`<b>${h.txt}</b>` : h.txt}</td><td class="small muted num">${h.by}</td></tr>`)}
     </tbody></table></div>` : html`<p class="muted">Sin cambios todavía.</p>`}`)));
 });
 
