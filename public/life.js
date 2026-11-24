@@ -256,13 +256,19 @@
     const ms = new Date(info.timerEnd) - (Date.now() + skew);
     return ms >= 0 ? { t: mmss(ms + 999), over: false } : { t: `+${mmss(-ms)}`, over: true };
   }
-  function nextTurn() {
-    const all = st.players.slice().sort((a, b) => a.seat - b.seat);
-    const rel = id => { const s0 = all.findIndex(q => q.id === (st.turn.first || st.turn.pid)); return (all.findIndex(q => q.id === id) - s0 + all.length) % all.length; };
-    const i = all.findIndex(q => q.id === st.turn.pid);
-    const nx = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out);
-    if (!nx) return;
-    st.turn = { ...st.turn, pid: nx.id, n: st.turn.n + 1, lap: (st.turn.lap || 1) + (rel(nx.id) <= rel(st.turn.pid) ? 1 : 0), at: Date.now() + skew };
+  // Filas: arriba de izquierda a derecha y abajo de derecha a izquierda
+  const topNOf = n => (rot && n >= 3 ? Math.floor(n / 2) : 0);
+  const ring = () => ordered(); // la fila de abajo se pinta al revés, así que la lista ya va en el sentido de las agujas del reloj
+  function nextPid() {
+    const r = ring(), i = r.findIndex(q => q.id === st.turn.pid);
+    const nx = [...r.slice(i + 1), ...r.slice(0, i + 1)].find(q => !q.out);
+    return nx ? nx.id : null;
+  }
+  function nextTurn(to) {
+    if (!to) return;
+    let lap = st.turn.lap || 1, played = st.turn.played || [st.turn.pid];
+    if (played.includes(to)) { lap++; played = [to]; } else played = [...played, to];
+    st.turn = { ...st.turn, pid: to, n: st.turn.n + 1, lap, played, at: Date.now() + skew };
   }
   function arrangePanel(p, i, rotd) {
     return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} arr ${pick === p.id ? 'picked' : ''}" data-swap="${p.id}">
@@ -326,7 +332,7 @@
   function turnSheetView() {
     const alive = st.players.filter(p => !p.out).sort((a, b) => a.seat - b.seat);
     return `<div class="lf-sheet" role="dialog" aria-label="Turnos"><div class="lf-sh-in"><h2>${st.turn ? '¿De quién es el turno?' : '¿Quién empieza?'}</h2>
-      <p class="small">«Pasar turno» va al siguiente por orden de asiento. La vuelta sube cuando vuelve a tocarle a quien empezó${info.comboLap ? `; los combos de 2 cartas no valen antes de la vuelta ${info.comboLap}` : ''}.</p>
+      <p class="small">«Pasar turno» va al siguiente en el sentido de las agujas del reloj, según estéis colocados en la pantalla. La vuelta sube cuando vuelve a tocarle a quien ya ha jugado${info.comboLap ? `; los combos de 2 cartas no valen antes de la vuelta ${info.comboLap}` : ''}.</p>
       <div class="lf-turns">${alive.map(p => `<button data-turn-to="${p.id}" class="${st.turn && st.turn.pid === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
       ${st.turn ? `<div class="lf-row"><span>Vuelta</span><button data-lap="-1">−</button><b>${st.turn.lap || 1}</b><button data-lap="1">+</button></div>` : ''}
       ${statsView()}
@@ -382,7 +388,7 @@
     if (!st && CAS) { root.innerHTML = setupView(); bindSetup(); return; }
     if (!st) { root.innerHTML = `<div class="lf-pick"><p>Cargando la mesa ${pod.table}…</p>${err ? `<p class="lf-note">${esc(err)}</p>` : ''}<a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`; return; }
     const n = st.players.length;
-    const topN = rot && n >= 3 ? Math.floor(n / 2) : 0;
+    const topN = topNOf(n);
     const ps = ordered();
     const top = ps.slice(0, topN), bot = ps.slice(topN);
     const rotd = (p, def) => (p.id in lay.rot ? lay.rot[p.id] : def);
@@ -400,7 +406,7 @@
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
-      <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${bot.map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
+      <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
       ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}</div>`;
     bind();
   }
@@ -486,9 +492,9 @@
     on('[data-turns]', () => { menu = false; turnSheet = true; render(); });
     on('[data-close-turn]', () => { turnSheet = false; render(); });
     on('[data-turn-to]', b => { turnSheet = false; const pid = Number(b.dataset.turnTo);
-      act({ op: 'turn', pid }, () => { st.turn = st.turn ? { ...st.turn, pid, n: st.turn.n + 1, at: Date.now() + skew } : { pid, n: 1, lap: 1, first: pid, at: Date.now() + skew }; }); });
+      act({ op: 'turn', pid }, () => { st.turn = st.turn ? { ...st.turn, pid, n: st.turn.n + 1, played: [...new Set([...(st.turn.played || []), pid])], at: Date.now() + skew } : { pid, n: 1, lap: 1, played: [pid], at: Date.now() + skew }; }); });
     on('[data-turn-off]', () => { turnSheet = false; act({ op: 'turnoff' }, () => { st.turn = null; }); });
-    on('[data-pass]', () => act({ op: 'turn' }, () => { nextTurn(); if (navigator.vibrate) navigator.vibrate(15); }));
+    on('[data-pass]', () => { const to = nextPid(); act({ op: 'turn', to }, () => { nextTurn(to); if (navigator.vibrate) navigator.vibrate(15); }); });
     on('[data-lap]', b => act({ op: 'lap', lap: (st.turn.lap || 1) + Number(b.dataset.lap) }, () => { st.turn.lap = Math.max(1, (st.turn.lap || 1) + Number(b.dataset.lap)); }));
     on('[data-install]', async () => { menu = false; try { installEv.prompt(); await installEv.userChoice; } catch (e) { /* nada */ } installEv = null; render(); });
   }

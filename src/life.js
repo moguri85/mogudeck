@@ -186,13 +186,15 @@ function apply(eventId, podId, byId, body) {
       case 'reopen': state.done = null; log('Mesa reabierta'); break;
       // Turnos: «Pasar turno» va al siguiente jugador vivo por orden de asiento; con pid, empieza o corrige el turno
       case 'turn': {
-        // Turno: «Pasar turno» va al siguiente vivo por orden de asiento; con pid, empieza o corrige.
-        // Vuelta: sube cada vez que el turno vuelve a pasar por quien empezó (los combos de 2 cartas no valen antes de la vuelta 6)
+        // Turno: «Pasar turno» manda «to» (el siguiente en el sentido de las agujas del reloj tal y como está colocada la mesa en ese aparato);
+        // sin «to», el siguiente por asiento. Con pid, empieza o corrige el turno.
+        // Vuelta: sube cuando le toca a alguien que ya ha jugado en esta vuelta (los combos de 2 cartas no valen antes de la vuelta 6)
         const all = state.players.slice().sort((a, b) => a.seat - b.seat);
         if (!all.some(q => !q.out)) break;
         const prev = state.turn;
         let next;
         if (body.pid) next = P(body.pid);
+        else if (body.to && prev) next = P(body.to);
         else if (!prev) next = all.find(q => !q.out);
         else { const i = all.findIndex(q => q.id === prev.pid); next = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out); }
         if (next.out) throw new LifeError(`${next.name} está eliminado`);
@@ -205,11 +207,10 @@ function apply(eventId, podId, byId, body) {
           t.n++; t.ms += ms; t.max = Math.max(t.max, ms);
           txt = ` (${pp.name} tardó ${mmss(ms)})`;
         }
-        const first = prev && prev.first ? prev.first : next.id;
-        const rel = id => { const s0 = all.findIndex(q => q.id === first); return (all.findIndex(q => q.id === id) - s0 + all.length) % all.length; };
-        let lap = prev ? (prev.lap || 1) : 1;
-        if (prev && !body.pid && rel(next.id) <= rel(prev.pid)) lap++;
-        state.turn = { pid: next.id, n: prev ? prev.n + 1 : 1, lap, first, at: now };
+        let lap = prev ? (prev.lap || 1) : 1, played = prev ? (prev.played || [prev.pid]) : [];
+        if (prev && !body.pid && played.includes(next.id)) { lap++; played = [next.id]; }
+        else if (!played.includes(next.id)) played = [...played, next.id];
+        state.turn = { pid: next.id, n: prev ? prev.n + 1 : 1, lap, played, at: now };
         curTurn = state.turn;
         log(`Vuelta ${lap}: turno de ${next.name}${txt}`, 'turn', next.id);
         break;

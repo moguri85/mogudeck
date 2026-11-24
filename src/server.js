@@ -15,6 +15,17 @@ app.use((req, res, next) => {
   res.set('X-Frame-Options', 'SAMEORIGIN');
   next();
 });
+// Versión de los estáticos: cambia con cada despliegue, así el navegador no se queda con el CSS/JS viejo
+const ASSET_V = (() => {
+  const dir = path.join(__dirname, '..', 'public'), h = require('crypto').createHash('sha1');
+  for (const f of require('fs').readdirSync(dir).filter(f => /\.(css|js)$/.test(f)).sort()) h.update(require('fs').readFileSync(path.join(dir, f)));
+  return h.digest('hex').slice(0, 8);
+})();
+app.use((req, res, next) => {
+  const send = res.send.bind(res);
+  res.send = body => send(typeof body === 'string' && /^\s*<!doctype html/i.test(body) ? body.replace(/(\/static\/[\w.-]+\.(?:css|js))"/g, `$1?v=${ASSET_V}"`) : body);
+  next();
+});
 // Publicación bajo una subruta (BASE_PATH): nginx quita el prefijo y aquí se añade a enlaces y redirecciones
 if (config.basePath) {
   const B = config.basePath;
