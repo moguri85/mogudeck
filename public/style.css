@@ -1618,3 +1618,8 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 @container (max-height: 200px) { .lf-out span { display: none; } }
 .lf-seg { flex-wrap: nowrap; } .lf-seg legend { float: none; width: auto; margin-bottom: 6px; }
 .lf-seg label { flex: 1 1 0; min-width: 0; } .lf-seg b { min-width: 0; width: 100%; box-sizing: border-box; }
+.lf-cerr { margin: 4px 0 0; font-size: 13px; color: #b42318; grid-column: 1 / -1; } .lf-setup .lf-cerr { color: #ff8a80; }
+.lf-sugs { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.lf-sugs button { border: 1px solid #ddd; background: #f4f4f4; color: #111; border-radius: 99px; padding: 6px 12px; min-height: 36px; font: 600 13px var(--font); cursor: pointer; }
+.lf-setup .lf-sugs button { background: #1f1f1f; border-color: #444; color: #fff; }
+.lf-sh-in h3 { margin: 14px 0 4px; }

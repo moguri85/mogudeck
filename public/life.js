@@ -191,7 +191,8 @@
         <fieldset class="lf-seg"><legend>Vidas</legend>${[20, 30, 40].map(n => `<label><input type="radio" name="start" value="${n}" ${c.start === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
         <div class="lf-names">${[0, 1, 2, 3, 4, 5].map(i => `<div class="lf-name" data-i="${i}" ${i >= c.n ? 'hidden' : ''}>
           <input name="p${i}" value="${esc(c.names[i] || '')}" placeholder="Jugador ${i + 1}" maxlength="24" aria-label="Nombre del jugador ${i + 1}">
-          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="80" aria-label="Comandante del jugador ${i + 1}"></div>`).join('')}</div>
+          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="120" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Comandante del jugador ${i + 1}">
+          <p class="lf-cerr" data-cerr="${i}" hidden></p></div>`).join('')}</div>
         <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de que los combos de 2 cartas no valen antes de la vuelta 6</span></label>
         <button class="jbtn big">Empezar partida</button>
       </form><a class="lf-back" href="${B}/">← Volver</a></div>`;
@@ -310,19 +311,44 @@
       <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
       <p class="small">El daño de comandante también resta vidas.</p><button class="jbtn big" data-close>Hecho</button></div></div>`;
   }
+  // Fondo: cualquier ilustración (la búsqueda no cambia el comandante). En casual, el comandante va aparte y se comprueba que exista
+  let cmdMsg = null;
   function artSheetView() {
     const p = st.players.find(x => x.id === artSheet);
     const a = arts[artSheet] || {};
     const cur = artOf(p);
-    return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>${CAS ? `Fondo de ${esc(p.name)}` : 'Tu fondo'}</h2>
-      ${CAS ? `<form class="lf-cmdr" data-cmdr="${p.id}"><input name="c" value="${esc(p.deck || '')}" placeholder="Nombre del comandante" maxlength="80" aria-label="Comandante"><button>Buscar</button></form>` : ''}
-      ${!a.name ? (CAS ? '<p class="small">Escribe el comandante para ver sus ilustraciones.</p>' : '<p>Primero di cuál es tu comandante en la página del torneo («Tu mazo y comandante»).</p>')
+    const showing = a.q || a.name;
+    const sugs = m => (m.sug && m.sug.length ? `<span class="lf-sugs">${m.sug.map(n => `<button type="button" data-cmd-sug="${esc(n)}">${esc(n)}</button>`).join('')}</span>` : '');
+    return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>${CAS ? esc(p.name) : 'Tu fondo'}</h2>
+      ${CAS ? `<h3>Comandante</h3><form class="lf-cmdr" data-cmdr="${p.id}"><input name="cmdr" list="lf-dl" data-sug="cmd" value="${esc(p.deck || '')}" placeholder="Nombre del comandante" maxlength="120" autocomplete="off" aria-label="Comandante"><button>Guardar</button></form>
+        ${cmdMsg && cmdMsg.pid === p.id ? `<p class="lf-cerr">${esc(cmdMsg.msg)}${sugs(cmdMsg)}</p>` : ''}` : ''}
+      <h3>Ilustración de fondo</h3>
+      <form class="lf-cmdr" data-artq="${p.id}"><input name="artq" list="lf-dl" data-sug="any" value="${esc(a.q || '')}" placeholder="Busca cualquier carta" maxlength="120" autocomplete="off" aria-label="Buscar ilustración"><button>Buscar</button></form>
+      ${!showing ? `<p class="small">${CAS ? 'Pon el comandante para ver sus ilustraciones, o busca cualquier carta.' : 'Busca cualquier carta, o di tu comandante en la página del torneo («Tu mazo y comandante») para ver las suyas.'}</p>`
       : !a.all ? '<p>Buscando ilustraciones…</p>'
-      : !a.all.length ? `<p>No encuentro ilustraciones de «${esc(a.name)}».</p>`
-      : `<p class="small">Ilustraciones de <b>${esc(a.name)}</b>. Todos los de la mesa verán la que elijas.</p>
+      : !a.all.length ? `<p>No encuentro ilustraciones de «${esc(showing)}».</p>`
+      : `<p class="small">Ilustraciones de <b>${esc(showing)}</b>${a.q && a.name && a.q !== a.name ? ` · <button type="button" class="link" data-art-back>ver las de ${esc(a.name)}</button>` : ''}. Todos los de la mesa verán la que elijas.</p>
         <div class="lf-arts">${a.all.map(x => `<button data-pick-art="${esc(x.url)}" class="${cur === x.url ? 'on' : ''}" title="${esc(x.set)} · ${esc(x.artist)}"><img src="${esc(x.url)}" alt="" loading="lazy"><span>${esc(x.set)}</span></button>`).join('')}</div>`}
       <button class="lf-noart ${!cur ? 'on' : ''}" data-pick-art="">Sin ilustración (solo color)</button>
       <button class="jbtn big" data-close-art>Hecho</button></div></div>`;
+  }
+  async function searchArt(pid, q) {
+    arts[pid] = { ...(arts[pid] || {}), q, all: null }; render();
+    try { const j = await (await fetch(`${B}/vidas/artes.json?q=${encodeURIComponent(q)}`)).json(); arts[pid].q = j.name || q; arts[pid].all = j.all || []; }
+    catch (e) { arts[pid].all = []; }
+    render();
+  }
+  // Comprueba el comandante (o la pareja «A + B») contra la base de cartas; sin conexión se acepta tal cual
+  async function checkCmd(txt) {
+    const out = [];
+    for (const part of txt.split(/\s*\+\s*/).filter(Boolean)) {
+      let j;
+      try { j = await (await fetch(`${B}/vidas/carta.json?cmd=1&q=${encodeURIComponent(part)}`)).json(); } catch (e) { out.push(part); continue; }
+      if (j.name) out.push(j.name);
+      else if (j.sug && j.sug.length === 1) out.push(j.sug[0].name);
+      else return { ok: false, msg: j.sug && j.sug.length ? `«${part}»: ¿cuál de estos?` : `No encuentro «${part}» como comandante.`, sug: (j.sug || []).slice(0, 5).map(x => x.name) };
+    }
+    return { ok: true, name: out.join(' + ') };
   }
   function statsView() {
     const ts = st.tstats || {};
@@ -383,6 +409,18 @@
   window.addEventListener('orientationchange', () => setTimeout(sizeVars, 150));
 
   function render() {
+    // Si se está escribiendo en un campo, se conserva al repintar (llegan cambios en directo mientras tanto)
+    const ae = document.activeElement;
+    if (ae && ae.name && root.contains(ae) && /^(INPUT|TEXTAREA)$/.test(ae.tagName)) {
+      const keep = { name: ae.name, v: ae.value, a: ae.selectionStart, b: ae.selectionEnd };
+      draw();
+      const el = root.querySelector(`[name="${keep.name}"]`);
+      if (el) { el.value = keep.v; el.focus(); try { el.setSelectionRange(keep.a, keep.b); } catch (e) { /* nada */ } }
+      return;
+    }
+    draw();
+  }
+  function draw() {
     sizeVars();
     if (!pod) { root.innerHTML = pickPodView(); return; }
     if (!st && CAS) { root.innerHTML = setupView(); bindSetup(); return; }
@@ -413,10 +451,23 @@
   function bindSetup() {
     const f = root.querySelector('[data-setup]');
     f.querySelectorAll('input[name=n]').forEach(r => { r.onchange = () => f.querySelectorAll('.lf-name').forEach(d => { d.hidden = Number(d.dataset.i) >= Number(r.value); }); });
-    f.onsubmit = e => {
+    f.addEventListener('click', e => { const b = e.target.closest('[data-fill]'); if (!b) return; const i = b.dataset.fill; f['c' + i].value = b.dataset.v; const er = f.querySelector(`[data-cerr="${i}"]`); er.hidden = true; });
+    f.onsubmit = async e => {
       e.preventDefault();
       const fd = new FormData(f), n = Number(fd.get('n')) || 4, start = Number(fd.get('start')) || 40;
       const names = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('p' + i) || '').trim()), cmds = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('c' + i) || '').trim());
+      const btn = f.querySelector('.jbtn'); btn.disabled = true; btn.textContent = 'Comprobando comandantes…';
+      let bad = false;
+      for (let i = 0; i < n; i++) {
+        const er = f.querySelector(`[data-cerr="${i}"]`); er.hidden = true;
+        if (!cmds[i]) continue;
+        const r = await checkCmd(cmds[i]);
+        if (r.ok) { cmds[i] = r.name; f['c' + i].value = r.name; continue; }
+        bad = true; er.hidden = false;
+        er.innerHTML = `${esc(r.msg)}${r.sug.length ? `<span class="lf-sugs">${r.sug.map(x => `<button type="button" data-fill="${i}" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</span>` : ''}`;
+      }
+      btn.disabled = false; btn.textContent = 'Empezar partida';
+      if (bad) return;
       store.set('mt_life_casual_cfg', JSON.stringify({ n, start, names, cmds, combo: !!fd.get('combo') }));
       st = { casual: true, start, combo: fd.get('combo') ? 6 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
         players: Array.from({ length: n }, (_, i) => ({ id: i + 1, seat: i + 1, name: names[i] || `Jugador ${i + 1}`, deck: cmds[i], life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })) };
@@ -444,11 +495,20 @@
     on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-rematch]', () => act({ op: 'reset' }));
     on('[data-new]', () => { if (!confirm('¿Empezar otra partida con otros jugadores? Se borra la actual.')) return; menu = false; st = null; hist = null; saveCas(); render(); });
-    root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = e => { e.preventDefault(); const p = st.players.find(x => x.id === Number(f.dataset.cmdr)); p.deck = f.c.value.trim(); p.art = null; p.artOff = false; saveCas(); arts[p.id] = p.deck ? { name: p.deck } : {}; render(); loadArts(p.id); }; });
+    root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = async e => {
+      e.preventDefault(); const p = st.players.find(x => x.id === Number(f.dataset.cmdr)); const v = f.cmdr.value.trim();
+      if (!v) { p.deck = ''; cmdMsg = null; saveCas(); arts[p.id] = {}; render(); return; }
+      const r = await checkCmd(v);
+      if (!r.ok) { cmdMsg = { pid: p.id, msg: r.msg, sug: r.sug }; render(); return; }
+      cmdMsg = null; p.deck = r.name; p.art = null; p.artOff = false; saveCas(); arts[p.id] = { name: r.name }; render(); loadArts(p.id);
+    }; });
+    on('[data-cmd-sug]', b => { const f = root.querySelector('[data-cmdr]'); f.cmdr.value = b.dataset.cmdSug; cmdMsg = null; f.requestSubmit(); });
+    root.querySelectorAll('[data-artq]').forEach(f => { f.onsubmit = e => { e.preventDefault(); const q = f.artq.value.trim(); if (q) searchArt(Number(f.dataset.artq), q); }; });
+    on('[data-art-back]', () => { const a = arts[artSheet]; a.q = null; a.all = null; render(); loadArts(artSheet); });
     on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
     on('[data-close]', () => { sheet = null; render(); });
     on('[data-art]', b => { artSheet = Number(b.dataset.art); render(); loadArts(artSheet); });
-    on('[data-close-art]', () => { artSheet = null; render(); });
+    on('[data-close-art]', () => { artSheet = null; cmdMsg = null; render(); });
     on('[data-hist]', () => { hist = []; render(); loadHist(); });
     on('[data-close-hist]', () => { hist = null; render(); });
     on('[data-undo]', b => act({ op: 'undo', id: b.dataset.undo }).then(loadHist));
@@ -532,6 +592,22 @@
   }
   document.addEventListener('pointerdown', wake, { passive: true });
   document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); load(true); if (!es || es.readyState === 2) live(); } });
+  // Sugerencias de cartas mientras se escribe (comandante o cualquier carta para el fondo)
+  const dl = document.createElement('datalist'); dl.id = 'lf-dl'; document.body.appendChild(dl);
+  let sugT = null;
+  root.addEventListener('input', e => {
+    const el = e.target; if (!el.dataset || !el.dataset.sug) return;
+    clearTimeout(sugT);
+    const q = el.value.split('+').pop().trim();
+    if (q.length < 3) return;
+    sugT = setTimeout(async () => {
+      try {
+        const j = await (await fetch(`${B}/vidas/carta.json?q=${encodeURIComponent(q)}${el.dataset.sug === 'cmd' ? '&cmd=1' : ''}`)).json();
+        const pre = el.value.includes('+') ? el.value.slice(0, el.value.lastIndexOf('+') + 1) + ' ' : '';
+        dl.innerHTML = [...new Set([j.name, ...(j.sug || []).map(x => x.name)].filter(Boolean))].map(n => `<option value="${esc(pre + n)}">`).join('');
+      } catch (er) { /* sin sugerencias */ }
+    }, 250);
+  });
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; });
   // Reloj del turno (sin repintar todo)
   setInterval(() => {

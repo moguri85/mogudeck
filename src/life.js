@@ -299,7 +299,9 @@ async function arts(deck, { fuzzy = false } = {}) {
     if (!res.list.length && fuzzy) {
       const r = await fetch(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
       let full = null;
-      if (r.ok) full = (await r.json()).name;
+      const loc = cardCheckLocal(name);
+      if (loc.name || loc.sug.length) full = loc.name || loc.sug[0].name;
+      else if (r.ok) full = (await r.json()).name;
       else { // nombre ambiguo («atraxa»): el comandante más jugado que lo contenga
         const r2 = await fetch(`${API}/cards/search?q=${encodeURIComponent(`name:"${name}" is:commander`)}&order=edhrec`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
         if (r2.ok) { const j = await r2.json(); full = j.data && j.data[0] && j.data[0].name; }
@@ -311,6 +313,33 @@ async function arts(deck, { fuzzy = false } = {}) {
   artCache.set(k, { at: Date.now(), list: res.list, ok: res.ok, name });
   return res.list;
 }
+// ¿Existe la carta? Primero en la base de cartas local (exacta y luego «contiene»), si no en Scryfall
+function cardCheckLocal(q, onlyCmd = false) {
+  const P = require('./pricedb');
+  const ex = P.lookup(q);
+  if (ex && (!onlyCmd || ex.cmd === 1)) return { name: ex.name, cmd: ex.cmd === 1, sug: [] };
+  const k = String(q || '').trim().toLowerCase().replace(/[%_]/g, '');
+  if (k.length < 2) return { name: null, cmd: false, sug: [] };
+  let rows = [];
+  try { rows = db.prepare(`SELECT name, cmd FROM card_prices WHERE key LIKE ? ${onlyCmd ? 'AND cmd = 1' : ''} ORDER BY (key LIKE ?) DESC, cmd DESC, length(name) LIMIT 8`).all('%' + k + '%', k + '%'); } catch (e) { /* sin base local */ }
+  return { name: ex && !onlyCmd ? ex.name : null, cmd: !!(ex && ex.cmd === 1), sug: rows.map(r => ({ name: r.name, cmd: r.cmd === 1 })) };
+}
+async function cardCheck(q, onlyCmd = false) {
+  const loc = cardCheckLocal(q, onlyCmd);
+  if (loc.name || loc.sug.length) return loc;
+  if (require('./pricedb').count() > 1000) return loc; // con base local completa, si no está es que no existe
+  try {
+    const r = await fetch(`${API}/cards/named?fuzzy=${encodeURIComponent(q)}`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const c = await r.json();
+      const info = require('./pricedb').rulesInfo(c);
+      if (!onlyCmd || info.cmd) return { name: c.name, cmd: !!info.cmd, sug: [] };
+    }
+  } catch (e) { /* sin red */ }
+  return loc;
+}
+// Ilustración que ha salido de una búsqueda nuestra (para no aceptar cualquier enlace)
+const knownArt = url => [...artCache.values()].some(c => c.list.some(a => a.url === url));
 const artName = (deck, fuzzy) => { const c = artCache.get((fuzzy ? '~' : '') + (cmdName(deck) || '').toLowerCase()); return (c && c.name) || cmdName(deck); };
 
 // Resumen de vidas por mesa (para la TV y la página del torneo)
@@ -350,4 +379,4 @@ function turnStats(eventId) {
 }
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { artName, mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { cardCheck, knownArt, artName, mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };

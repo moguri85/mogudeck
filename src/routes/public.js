@@ -692,6 +692,13 @@ r.get('/vidas.webmanifest', (req, res) => {
   res.type('application/manifest+json').send(JSON.stringify({ name: 'Contador de vidas', short_name: 'Vidas', start_url: 'vidas', scope: './', display: 'fullscreen', orientation: 'landscape', background_color: '#0d0d0d', theme_color: '#0d0d0d',
     icons: [{ src: 'static/img/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'static/img/icon-512.png', sizes: '512x512', type: 'image/png' }] }));
 });
+// Comprobar una carta (comandante del contador casual y sugerencias mientras se escribe)
+r.get('/vidas/carta.json', async (req, res) => {
+  if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiadas peticiones' });
+  const q = String(req.query.q || '').slice(0, 120).trim();
+  if (q.length < 2) return res.json({ name: null, sug: [] });
+  res.set('Cache-Control', 'no-store').json(await L.cardCheck(q, req.query.cmd === '1'));
+});
 r.get('/vidas/artes.json', async (req, res) => {
   if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiadas peticiones' });
   const q = String(req.query.q || '').slice(0, 120).trim();
@@ -746,7 +753,7 @@ r.post('/commander/:id/vidas/:pod', async (req, res) => {
     if (op === 'art' && req.body.art) {
       const p = db.prepare('SELECT deck FROM cmd_players WHERE id = ? AND event_id = ?').get(by, ev.id);
       const list = await L.arts(p && p.deck);
-      if (!list.some(a => a.url === req.body.art)) throw new L.LifeError('Esa ilustración no es de tu comandante');
+      if (!list.some(a => a.url === req.body.art) && !L.knownArt(req.body.art)) throw new L.LifeError('Esa ilustración no vale');
     }
     const out = op === 'finish' ? L.finish(ev.id, Number(req.params.pod), by, req.body.winner) : L.apply(ev.id, Number(req.params.pod), by, { ...req.body, op });
     if (['kill', 'revive', 'finish', 'reset'].includes(op)) { C.activity(ev.id, by, 'contador', `mesa ${out.table}: ${op}${req.body.pid ? ' ' + req.body.pid : ''}`, req); require('../rivals').invalidate(); }
