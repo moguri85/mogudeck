@@ -1538,3 +1538,16 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 @container (max-height: 170px) { .lf-in header small { display: none; } .lf-in footer button { min-height: 26px; padding: 2px 8px; } }
 .lf-kill b, .lf-out b { font-size: clamp(13px, 9cqh, 28px); } .lf-kill div button { min-height: 36px; padding: 6px 10px; font-size: 14px; }
 .lf-who { flex-wrap: nowrap; overflow-x: auto; padding: 6px 10px; } .lf-who span { width: auto; white-space: nowrap; } .lf-who button { flex: none; min-height: 32px; padding: 4px 12px; }
+/* Contador: muerte súbita */
+.lf-bar button.hot { background: #5a1010; border-color: #b42318; color: #fff; }
+.lf.is-sudden .lf-bar { background: #3a0808; }
+.lf.is-sudden .lf-p:not(.out) { box-shadow: inset 0 0 0 3px #e11d48; }
+.lf-sudden { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; min-height: 0; text-align: center; }
+.lf-sudden > b { font: 800 clamp(22px, 22cqh, 60px)/1 var(--display, var(--font)); opacity: .55; }
+.lf-sudden span { font-size: clamp(11px, 7cqh, 15px); font-weight: 700; }
+.lf-sudden div { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.lf-sudden div button { background: #e11d48; color: #fff; border: 0; border-radius: 12px; padding: 6px 12px; font: 700 14px var(--font); min-height: 36px; cursor: pointer; }
+.lf-end.sudden { border-top-color: #e11d48; } .lf-end.sudden b { color: #ff6b81; }
+.lf-end.sudden { flex-direction: row; justify-content: center; gap: 12px; padding: 6px 12px; } .lf-end.sudden span { font-size: 13px; } .lf-end.sudden b { font-size: 13px; display: inline; } .lf-end.sudden .link { min-height: 28px; font-size: 13px; }
+.lf.is-sudden .lf-in footer:empty { display: none; }
+.lf.is-sudden .lf-in { grid-template-rows: auto minmax(0, 1fr); }

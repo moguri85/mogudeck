@@ -110,6 +110,8 @@ function apply(eventId, podId, byId, body) {
         break;
       }
       case 'reopen': state.done = null; log('Mesa reabierta'); break;
+      // Muerte súbita (desempate por tiempo): cualquier daño de un rival elimina; perder vidas por uno mismo no
+      case 'sudden': state.sudden = !!Number(body.on); log(state.sudden ? 'Muerte súbita' : 'Fin de la muerte súbita'); break;
       case 'art': {
         const p = P(body.pid);
         if (p.id !== byId) throw new LifeError('Cada jugador cambia solo su propio fondo');

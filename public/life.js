@@ -10,7 +10,7 @@
   let turnPref = store.get('mt_life_turn') !== '0'; // apaisado aunque el móvil esté en vertical
   const dismissed = new Set();
   const bubbles = {};
-  let menu = false, sheet = null, artSheet = null, timeUp = false;
+  let menu = false, sheet = null, artSheet = null;
   let arts = {}; // pid → { name, def, all? }
 
   function resolveMe() {
@@ -99,13 +99,14 @@
         <header><b>${esc(p.name)}${own ? ' <i>tú</i>' : ''}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
-            <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button><button data-kill="${p.id}" data-by="" data-how="desempate" class="ghost">Pierde el desempate</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
+            <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
+        : st.sudden ? `<div class="lf-sudden"><span>¿Quién le hace daño?</span><div>${others.filter(o => !o.out).map(o => `<button data-kill="${p.id}" data-by="${o.id}" data-how="dano">${esc(o.name)}</button>`).join('')}</div></div>`
         : `<div class="lf-life"><button class="lz minus" data-z="${p.id}" data-d="-1" aria-label="Quitar una vida a ${esc(p.name)}"><span>−</span></button>
             <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : ''}
             <button class="lz plus" data-z="${p.id}" data-d="1" aria-label="Sumar una vida a ${esc(p.name)}"><span>+</span></button></div>`}
-        <footer><button data-sheet="${p.id}">Cmdte${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
+        ${st.sudden && !p.out ? '<footer></footer>' : `<footer><button data-sheet="${p.id}">Cmdte${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
           ${own ? `<button data-art="${p.id}">Fondo</button>` : ''}
-          ${!p.out && !isDead && mine() ? `<button data-kill-open="${p.id}" class="ghost">Eliminar</button>` : ''}</footer>
+          ${!p.out && !isDead && mine() ? `<button data-kill-open="${p.id}" class="ghost">Eliminar</button>` : ''}</footer>`}
       </div></section>`;
   }
   function sheetView() {
@@ -141,8 +142,8 @@
       return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
         ${mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
     }
-    if (timeUp) {
-      return `<div class="lf-end"><b>Se acabó el tiempo: desempate</b><span>Haced el desempate como diga la tienda. A quien lo pierda: «Eliminar» → «Pierde el desempate». Los puestos salen del orden de eliminación.</span><button class="link" data-time-off>Cerrar</button></div>`;
+    if (st.sudden) {
+      return `<div class="lf-end sudden"><span><b>Muerte súbita:</b> el primer daño de un rival elimina. Pagar vidas o dañarte a ti mismo no mata.</span>${mine() ? '<button class="link" data-sudden="0">Quitar</button>' : ''}</div>`;
     }
     return '';
   }
@@ -165,11 +166,11 @@
     const n = st.players.length;
     const topN = rot && n >= 3 ? Math.floor(n / 2) : 0;
     const top = st.players.slice(0, topN), bot = st.players.slice(topN);
-    root.innerHTML = `<div class="lf n${n}">
+    root.innerHTML = `<div class="lf n${n} ${st.sudden ? 'is-sudden' : ''}">
       <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
-        <i class="lf-live" title="En directo"></i><button data-menu aria-expanded="${menu}">Opciones</button></div>
+        <i class="lf-live" title="En directo"></i>${mine() && !st.done && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button></div>
       ${menu ? `<div class="lf-menu"><button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
-        ${mine() && !st.done ? '<button data-time-on>Se acabó el tiempo</button><button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
+        ${mine() && !st.done ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         <button data-whoami>Cambiar quién soy</button></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
@@ -192,8 +193,7 @@
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
     on('[data-reset]', () => { if (confirm('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
-    on('[data-time-on]', () => { menu = false; timeUp = true; render(); });
-    on('[data-time-off]', () => { timeUp = false; render(); });
+    on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; if (on && !confirm('¿Pasar a muerte súbita? El primer daño de un rival elimina.')) return; menu = false; act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; }); });
     on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
     on('[data-close]', () => { sheet = null; render(); });
