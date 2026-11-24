@@ -10,7 +10,7 @@
   let turnPref = store.get('mt_life_turn') !== '0'; // apaisado aunque el móvil esté en vertical
   const dismissed = new Set();
   const bubbles = {};
-  let menu = false, sheet = null, artSheet = null, finishPick = null;
+  let menu = false, sheet = null, artSheet = null, timeUp = false;
   let arts = {}; // pid → { name, def, all? }
 
   function resolveMe() {
@@ -24,7 +24,7 @@
   const mine = () => !!(me && pod && pod.players.some(x => x.id === me.id));
   const nm = pid => esc(((st && st.players.find(p => p.id === pid)) || {}).name || '—');
   const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
-  const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', otro: 'otra forma' };
+  const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
   const artOf = p => (p.artOff ? null : p.art || (arts[p.id] && arts[p.id].def) || null);
 
   async function post(body) {
@@ -99,7 +99,7 @@
         <header><b>${esc(p.name)}${own ? ' <i>tú</i>' : ''}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
-            <button data-kill="${p.id}" data-by="" class="ghost">Nadie · se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
+            <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button><button data-kill="${p.id}" data-by="" data-how="desempate" class="ghost">Pierde el desempate</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
         : `<div class="lf-life"><button class="lz minus" data-z="${p.id}" data-d="-1" aria-label="Quitar una vida a ${esc(p.name)}"><span>−</span></button>
             <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : ''}
             <button class="lz plus" data-z="${p.id}" data-d="1" aria-label="Sumar una vida a ${esc(p.name)}"><span>+</span></button></div>`}
@@ -141,9 +141,8 @@
       return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
         ${mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
     }
-    if (finishPick) {
-      return `<div class="lf-end"><b>Fin por tiempo: ¿quién gana la mesa?</b><span>El resto queda por vidas y los eliminados por orden inverso.</span>
-        <div class="lf-fin">${alive.map(p => `<button data-finish="${p.id}">${esc(p.name)} (${p.life})</button>`).join('')}</div><button class="link" data-fin-cancel>Cancelar</button></div>`;
+    if (timeUp) {
+      return `<div class="lf-end"><b>Se acabó el tiempo: desempate</b><span>Haced el desempate como diga la tienda. A quien lo pierda: «Eliminar» → «Pierde el desempate». Los puestos salen del orden de eliminación.</span><button class="link" data-time-off>Cerrar</button></div>`;
     }
     return '';
   }
@@ -170,7 +169,7 @@
       <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
         <i class="lf-live" title="En directo"></i><button data-menu aria-expanded="${menu}">Opciones</button></div>
       ${menu ? `<div class="lf-menu"><button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
-        ${mine() && !st.done ? '<button data-fin-open>Fin por tiempo</button><button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
+        ${mine() && !st.done ? '<button data-time-on>Se acabó el tiempo</button><button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         <button data-whoami>Cambiar quién soy</button></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
@@ -193,9 +192,9 @@
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
     on('[data-reset]', () => { if (confirm('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
-    on('[data-fin-open]', () => { menu = false; finishPick = true; render(); });
-    on('[data-fin-cancel]', () => { finishPick = null; render(); });
-    on('[data-finish]', b => act({ op: 'finish', winner: b.dataset.finish || '' }).then(() => { finishPick = null; }));
+    on('[data-time-on]', () => { menu = false; timeUp = true; render(); });
+    on('[data-time-off]', () => { timeUp = false; render(); });
+    on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
     on('[data-close]', () => { sheet = null; render(); });
     on('[data-art]', b => { artSheet = Number(b.dataset.art); render(); loadArts(artSheet); });
@@ -209,7 +208,7 @@
       if (navigator.vibrate) navigator.vibrate(6);
     }));
     on('[data-kill]', b => { const pid = Number(b.dataset.kill), by = b.dataset.by; const p = st.players.find(x => x.id === pid);
-      const how = !by ? 'concede' : (p.cmd[by] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
+      const how = b.dataset.how === 'desempate' ? 'desempate' : !by ? 'concede' : (p.cmd[by] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
       act({ op: 'kill', pid, killer: by, how }, () => { p.out = true; p.killer = by ? Number(by) : null; p.how = how; p.ord = st.players.filter(x => x.out).length; }); });
     on('[data-kill-open]', b => { const p = st.players.find(x => x.id === Number(b.dataset.killOpen)); dismissed.delete(p.id); if (p.life > 0) p.life = 0; render(); });
     on('[data-alive]', b => { dismissed.add(Number(b.dataset.alive)); load(true); render(); });

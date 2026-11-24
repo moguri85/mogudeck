@@ -22,7 +22,7 @@ addColumn('cmd_events', 'life_auto', 'INTEGER DEFAULT 0');
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
 
 class LifeError extends Error {}
-const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', otro: 'otra forma' };
+const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
 
 function podInfo(eventId, podId) {
   const pod = db.prepare(`SELECT pd.*, rd.number rnum, rd.event_id FROM cmd_pods pd JOIN cmd_rounds rd ON rd.id = pd.round_id WHERE pd.id = ?`).get(podId);
@@ -135,15 +135,11 @@ function finish(eventId, podId, byId, winnerId) {
     if (pod.reported) throw new LifeError('Esta mesa ya tiene resultado');
     if (!x.players.some(p => p.id === byId)) throw new LifeError('Solo puede anotar alguien de la mesa');
     const alive = state.players.filter(p => !p.out);
-    let winner;
-    if (alive.length === 1) winner = alive[0];
-    else {
-      winner = alive.find(p => p.id === Number(winnerId));
-      if (!winner) throw new LifeError(alive.length ? 'Elige quién gana la mesa' : 'No queda nadie en pie');
-    }
-    const rest = alive.filter(p => p.id !== winner.id).sort((a, b) => b.life - a.life);
+    // Solo hay ganador cuando queda uno en pie (por daño, veneno, rendición o desempate): nunca por vidas
+    if (alive.length !== 1) throw new LifeError(alive.length ? 'La mesa acaba cuando solo queda uno en pie. Si se acaba el tiempo, haced el desempate y marcad como eliminados a los que lo pierdan.' : 'No queda nadie en pie');
+    const winner = alive[0];
     const out = state.players.filter(p => p.out).sort((a, b) => b.ord - a.ord);
-    const order = [winner, ...rest, ...out].map(p => p.id);
+    const order = [winner, ...out].map(p => p.id);
     if (ev.life_auto) {
       C.reportPod(podId, { order });
       C.clearProposal(podId);
