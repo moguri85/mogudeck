@@ -28,7 +28,8 @@ addColumn('cmd_events', 'life_auto', 'INTEGER DEFAULT 0');
 addColumn('cmd_life_log', 'turn_pid', 'INTEGER');
 addColumn('cmd_life_log', 'turn_n', 'INTEGER');
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
-addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6'); // combos de 2 cartas prohibidos antes de esta vuelta (0 = sin límite)
+addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6');
+addColumn('cmd_events', 'turn_warn', 'INTEGER DEFAULT 5'); // minutos para avisar de un turno largo (0 = no avisar) // combos de 2 cartas prohibidos antes de esta vuelta (0 = sin límite)
 
 class LifeError extends Error {}
 const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
@@ -57,7 +58,7 @@ function load(eventId, podId, create = true) {
 }
 function view(eventId, podId) {
   const x = load(eventId, podId);
-  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6 };
+  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6, turnWarn: x.ev.turn_warn ?? 5 };
 }
 const mmss = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
 const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
@@ -307,6 +308,30 @@ function killsByPod() {
   for (const k of db.prepare('SELECT * FROM cmd_kills').all()) { if (!m.has(k.pod_id)) m.set(k.pod_id, []); m.get(k.pod_id).push(k); }
   return m;
 }
+// Turnos que pasan del aviso (para la pantalla de la tienda)
+function slowTurns() {
+  const now = Date.now();
+  return db.prepare(`SELECT l.pod_id, l.state, pd.table_number tn, e.turn_warn FROM cmd_life l JOIN cmd_pods pd ON pd.id = l.pod_id JOIN cmd_rounds rd ON rd.id = pd.round_id
+    JOIN cmd_events e ON e.id = rd.event_id WHERE e.status = 'running' AND e.public = 1 AND pd.reported = 0 AND e.turn_warn > 0`).all().flatMap(r => {
+    const s = JSON.parse(r.state); const t = s.turn;
+    if (!t || s.done || now - t.at < r.turn_warn * 60000) return [];
+    const p = s.players.find(q => q.id === t.pid);
+    return p && !p.out ? [{ id: `${r.pod_id}-${t.n}`, table: r.tn, name: p.name, lap: t.lap || 1, ms: now - t.at }] : [];
+  });
+}
+// Tiempo de turno de cada jugador en todo el torneo
+function turnStats(eventId) {
+  const out = new Map();
+  for (const r of db.prepare('SELECT l.state FROM cmd_life l JOIN cmd_pods pd ON pd.id = l.pod_id JOIN cmd_rounds rd ON rd.id = pd.round_id WHERE rd.event_id = ?').all(eventId)) {
+    const s = JSON.parse(r.state);
+    for (const [pid, t] of Object.entries(s.tstats || {})) {
+      const p = s.players.find(q => q.id === Number(pid));
+      const o = out.get(Number(pid)) || { id: Number(pid), name: p ? p.name : '—', n: 0, ms: 0, max: 0 };
+      o.n += t.n; o.ms += t.ms; o.max = Math.max(o.max, t.max); out.set(o.id, o);
+    }
+  }
+  return [...out.values()].filter(o => o.n).map(o => ({ ...o, avg: o.ms / o.n })).sort((a, b) => b.avg - a.avg);
+}
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };

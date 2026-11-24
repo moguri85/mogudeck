@@ -2,6 +2,7 @@
 const express = require('express');
 const { db } = require('../db');
 const C = require('../commander');
+const L = require('../life');
 const melee = require('../melee');
 const notify = require('../notify');
 const deckvalue = require('../deckvalue');
@@ -122,6 +123,7 @@ function eventForm(ev, action) {
       <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
       <label>Vidas iniciales<select name="life_start">${[40, 30, 25, 20].map(n => html`<option value="${n}" ${(ev.life_start || 40) === n ? 'selected' : ''}>${n}</option>`)}</select></label>
       <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
+      <label>Avisar de un turno largo<select name="turn_warn">${[[5, 'A los 5 minutos'], [3, 'A los 3 minutos'], [4, 'A los 4 minutos'], [6, 'A los 6 minutos'], [8, 'A los 8 minutos'], [10, 'A los 10 minutos'], [0, 'No avisar']].map(([n, t]) => html`<option value="${n}" ${(ev.turn_warn ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Combos de 2 cartas<select name="combo_lap">${[[6, 'Prohibidos antes de la vuelta 6'], [5, 'Prohibidos antes de la vuelta 5'], [4, 'Prohibidos antes de la vuelta 4'], [7, 'Prohibidos antes de la vuelta 7'], [8, 'Prohibidos antes de la vuelta 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 6) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
     </fieldset>
     <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="4">${ev.info || ''}</textarea></label>
@@ -146,7 +148,7 @@ function eventParams(b) {
 }
 function saveLife(id, b) {
   require('../life');
-  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 6 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), id);
+  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ?, turn_warn = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 6 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), b.turn_warn == null ? 5 : Math.min(Math.max(Number(b.turn_warn) || 0, 0), 30), id);
 }
 const ptsN = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.min(Math.max(Math.round(Number(v)), 0), 20));
 
@@ -393,6 +395,9 @@ r.get('/:id', (req, res) => {
         <p class="small muted">Clasificación solo por puntos; los empatados comparten puesto. Para emparejar y para el corte de la mesa final, los empates a puntos se resuelven por sorteo.</p>`
     : html`<p class="muted">Aún no hay resultados.</p>`}</section>
 
+      ${(() => { const ts = L.turnStats(ev.id); return ts.length ? html`<section class="panel"><h2>Tiempo de turno</h2><div class="tablewrap"><table class="tbl"><thead><tr><th>Jugador</th><th class="num">Turnos</th><th class="num">Media</th><th class="num">Más largo</th><th class="num">Total</th></tr></thead><tbody>
+        ${ts.map(t => html`<tr><td>${t.name}</td><td class="num">${t.n}</td><td class="num strong">${L.mmss(t.avg)}</td><td class="num">${L.mmss(t.max)}</td><td class="num">${L.mmss(t.ms)}</td></tr>`)}</tbody></table></div>
+        <p class="small muted">Sale de «Pasar turno» en el contador de vidas, sumando todas las mesas del torneo. Ordenado por la media, de más lento a más rápido.</p></section>` : ''; })()}
       <section class="panel"><h2>Jugadores (${ps.length})</h2>
         ${ev.melee_tournament_id ? html`<form method="post" action="${base(ev)}/importar"><button class="btn small">Importar inscritos de Melee (#${ev.melee_tournament_id})</button></form>` : ''}
         ${evDups.length ? html`<div class="notice small"><b>${evDups.length} posible${evDups.length > 1 ? 's' : ''} duplicado${evDups.length > 1 ? 's' : ''}</b> con jugadores de este evento: ${evDups.slice(0, 3).map((d, i) => html`${i ? ', ' : ''}${d.a.name} ⇄ ${d.b.name}`)}${evDups.length > 3 ? '…' : ''} <a href="/admin/vincular">Revisar</a></div>` : ''}
@@ -694,7 +699,7 @@ r.post('/:id/deshacer', (req, res) => {
 // Historial completo del contador de vidas de una mesa (para resolver dudas)
 r.get('/:id/mesa/:pod/historial', (req, res) => {
   const ev = loadEv(req, res); if (!ev) return;
-  const L = require('../life');
+  // L: contador de vidas (arriba)
   let items;
   try { items = L.history(ev.id, Number(req.params.pod), 2000); } catch (e) { return res.redirect(base(ev) + '?err=' + encodeURIComponent(e.message)); }
   const t = ms => new Date(ms).toLocaleString('es-ES', { timeZone: require('../config').tz, hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });

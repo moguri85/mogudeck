@@ -165,8 +165,23 @@
     }
     primedK = true;
   }
+  // Avisos de turnos largos (uno por turno)
+  const seenS = new Set();
+  function slowToasts(st) {
+    for (const x of st.slow || []) {
+      if (seenS.has(x.id)) continue;
+      seenS.add(x.id);
+      const d = document.createElement('div');
+      d.className = 'tv-toast slow';
+      d.innerHTML = `<b>Mesa ${esc(x.table)}</b>el turno de <span>${esc(x.name)}</span> ya lleva ${x.mins} min`;
+      document.body.appendChild(d);
+      requestAnimationFrame(() => d.classList.add('on'));
+      setTimeout(() => { d.classList.remove('on'); setTimeout(() => d.remove(), 600); }, 8000);
+    }
+  }
   function celebrateNew(st) {
     killToasts(st);
+    slowToasts(st);
     for (const b of st.claimed || []) {
       if (seenB.has(b.id)) continue;
       seenB.add(b.id);

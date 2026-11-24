@@ -874,6 +874,7 @@ r.get('/tv.json', (req, res) => {
     kills: db.prepare(`SELECT k.pod_id, k.victim_id, k.killer_id, k.how, k.at, pd.table_number tn, v.name vn, v.username vu, kk.name kn, kk.username ku FROM cmd_kills k
       JOIN cmd_pods pd ON pd.id = k.pod_id JOIN cmd_players v ON v.id = k.victim_id LEFT JOIN cmd_players kk ON kk.id = k.killer_id
       WHERE k.at >= datetime('now', '-10 minutes') ORDER BY k.at`).all().map(k => ({ id: `${k.pod_id}-${k.victim_id}`, table: k.tn, victim: C.pubName({ name: k.vn, username: k.vu }), killer: k.kn ? C.pubName({ name: k.kn, username: k.ku }) : null, how: k.how })),
+    slow: L.slowTurns().map(x => ({ ...x, mins: Math.floor(x.ms / 60000) })),
     momentsQr: feature('moments') ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/momentos/subir')) : null,
     bountiesQr: bnt.length ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/recompensas')) : null,
   });

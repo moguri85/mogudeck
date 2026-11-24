@@ -1592,3 +1592,7 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-ts { width: 100%; border-collapse: collapse; font-size: 14px; margin: 6px 0 10px; font-variant-numeric: tabular-nums; }
 .lf-ts th { font-size: 12px; color: #888; font-weight: 600; text-align: right; } .lf-ts td { padding: 4px 0; border-top: 1px solid #eee; text-align: right; } .lf-ts td:first-child { text-align: left; font-weight: 600; }
 .lf-tts { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 2px; } .lf-tts .lf-tt, .lf-tts .lf-combo { margin-top: 0; }
+.lf-tt.slow { background: #b42318; animation: lfslow 1.2s ease-in-out infinite alternate; }
+@keyframes lfslow { to { background: #e11d48; } }
+@media (prefers-reduced-motion: reduce) { .lf-tt.slow { animation: none; } }
+.tv-toast.slow { bottom: 16vh; border-color: #e11d48; } .tv-toast.slow b { color: #ff6b81; }

@@ -121,6 +121,7 @@
   }
   const mmss = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`; };
   const turnOn = () => !!(st.turn && !st.done);
+  const slowT = () => !!(st && st.turn && info.turnWarn && Date.now() + skew - st.turn.at >= info.turnWarn * 60000);
   // Combos de 2 cartas: prohibidos antes de la vuelta que diga el torneo (normalmente la 6)
   const comboTag = () => { const c = info.comboLap; if (!c || !st.turn) return ''; const l = st.turn.lap || 1;
     return l < c ? `<span class="lf-combo no">Sin combos hasta V${c}</span>` : '<span class="lf-combo ok">Combos permitidos</span>'; };
@@ -156,7 +157,7 @@
     const pass = myTurn && mine() && !isDead ? '<button class="lf-pass" data-pass>Pasar turno</button>' : '';
     return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
-        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
+        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
             <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
@@ -381,7 +382,7 @@
   window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); installEv = e; });
   // Reloj del turno (sin repintar todo)
   setInterval(() => {
-    const t = root.querySelector('[data-tt]'); if (t && st && st.turn) t.textContent = mmss(Date.now() + skew - st.turn.at);
+    const t = root.querySelector('[data-tt]'); if (t && st && st.turn) { t.textContent = mmss(Date.now() + skew - st.turn.at); t.parentNode.classList.toggle('slow', slowT()); }
     const c = root.querySelector('[data-rc]'), k = clockTxt(); if (c && k) { c.textContent = k.t; c.classList.toggle('over', k.over); }
   }, 1000);
   if (pod) loadLay();
