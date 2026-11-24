@@ -7,9 +7,11 @@
   const id = S.id;
   let me = null, pod = null, st = null, ver = 0, info = {}, busy = 0, err = '';
   let rot = store.get('mt_life_rot') !== '0';
+  let turnPref = store.get('mt_life_turn') !== '0'; // apaisado aunque el móvil esté en vertical
   const dismissed = new Set();
   const bubbles = {};
-  let menu = false, sheet = null, finishPick = null;
+  let menu = false, sheet = null, artSheet = null, finishPick = null;
+  let arts = {}; // pid → { name, def, all? }
 
   function resolveMe() {
     const acc = window.__ME;
@@ -23,6 +25,7 @@
   const nm = pid => esc(((st && st.players.find(p => p.id === pid)) || {}).name || '—');
   const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
   const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', otro: 'otra forma' };
+  const artOf = p => (p.artOff ? null : p.art || (arts[p.id] && arts[p.id].def) || null);
 
   async function post(body) {
     const tk = `mt_tok_${id}_${me.id}`;
@@ -50,6 +53,12 @@
       if (force || (!busy && j.version !== ver)) { st = j.state; ver = j.version; info = j; render(); }
     } catch (e) { /* sin conexión: se reintenta */ }
   }
+  async function loadArts(pid) {
+    try {
+      const j = await (await fetch(`${B}/commander/${id}/vidas/${pod.id}/artes.json${pid ? `?pid=${pid}` : ''}`, { cache: 'no-store' })).json();
+      if (j.arts) { for (const k of Object.keys(j.arts)) arts[k] = { ...(arts[k] || {}), ...j.arts[k] }; render(); }
+    } catch (e) { /* sin fondos */ }
+  }
 
   // Toques: mitad izquierda resta, mitad derecha suma; si mantienes pulsado, repite
   function bump(pid, d) {
@@ -72,29 +81,31 @@
   function pickPodView() {
     return `<div class="lf-pick"><h1>Contador de vidas</h1><p>${esc(S.name)} · ronda ${S.round || '—'}</p>
       ${S.status !== 'running' ? '<p class="lf-note">El contador se abre cuando el torneo está en juego.</p>' : ''}
-      ${S.pods.length ? `<p>¿Cuál es tu mesa?</p><div class="lf-pods">${S.pods.map(p => `<a href="?mesa=${p.id}" class="${p.reported ? 'done' : ''}"><b>Mesa ${p.table}</b><span>${p.players.map(x => esc(x.name)).join(' · ')}</span></a>`).join('')}</div>` : ''}
+      ${S.pods.length ? `<p>¿Qué mesa quieres ver?</p><div class="lf-pods">${S.pods.map(p => `<a href="?mesa=${p.id}" class="${p.reported ? 'done' : ''}"><b>Mesa ${p.table}</b><span>${p.players.map(x => esc(x.name)).join(' · ')}</span></a>`).join('')}</div>` : ''}
       <a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`;
   }
   function whoView() {
-    return `<div class="lf-who"><span>¿Quién eres? (para poder anotar)</span>${pod.players.map(x => `<button data-me="${x.id}">${esc(x.name)}</button>`).join('')}</div>`;
+    return `<div class="lf-who"><span>¿Juegas aquí? Eres:</span>${pod.players.map(x => `<button data-me="${x.id}">${esc(x.name)}</button>`).join('')}</div>`;
   }
-  function panel(p, i, n) {
-    const top = rot && n >= 3 && i < Math.floor(n / 2);
+  function panel(p, i, top) {
     const isDead = dead(p) && !dismissed.has(p.id);
     const cmdMax = Math.max(0, ...Object.values(p.cmd));
     const bub = bubbles[p.id];
     const others = st.players.filter(x => x.id !== p.id);
-    return `<section class="lf-p ${top ? 'rot' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''}" style="--i:${i}">
+    const art = artOf(p);
+    const own = mine() && me.id === p.id;
+    return `<section class="lf-p c${i} ${top ? 'rot' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
-        <header><b>${esc(p.name)}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
-        ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
+        <header><b>${esc(p.name)}${own ? ' <i>tú</i>' : ''}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
+        ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
             <button data-kill="${p.id}" data-by="" class="ghost">Nadie · se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
         : `<div class="lf-life"><button class="lz minus" data-z="${p.id}" data-d="-1" aria-label="Quitar una vida a ${esc(p.name)}"><span>−</span></button>
             <b aria-live="polite">${p.life}</b>${bub ? `<em class="${bub.v > 0 ? 'up' : 'down'}">${bub.v > 0 ? '+' : ''}${bub.v}</em>` : ''}
             <button class="lz plus" data-z="${p.id}" data-d="1" aria-label="Sumar una vida a ${esc(p.name)}"><span>+</span></button></div>`}
-        <footer><button data-sheet="${p.id}">Comandante${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
-          ${!p.out && !isDead ? `<button data-kill-open="${p.id}" class="ghost">Eliminar</button>` : ''}</footer>
+        <footer><button data-sheet="${p.id}">Cmdte${cmdMax ? ` <i>${cmdMax}</i>` : ''}</button><button data-sheet="${p.id}">Veneno${p.poison ? ` <i>${p.poison}</i>` : ''}</button>
+          ${own ? `<button data-art="${p.id}">Fondo</button>` : ''}
+          ${!p.out && !isDead && mine() ? `<button data-kill-open="${p.id}" class="ghost">Eliminar</button>` : ''}</footer>
       </div></section>`;
   }
   function sheetView() {
@@ -106,16 +117,29 @@
       <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
       <p class="small">El daño de comandante también resta vidas.</p><button class="jbtn big" data-close>Hecho</button></div></div>`;
   }
+  function artSheetView() {
+    const p = st.players.find(x => x.id === artSheet);
+    const a = arts[artSheet] || {};
+    const cur = artOf(p);
+    return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>Tu fondo</h2>
+      ${!a.name ? '<p>Primero di cuál es tu comandante en la página del torneo («Tu mazo y comandante»).</p>'
+      : !a.all ? '<p>Buscando ilustraciones…</p>'
+      : !a.all.length ? `<p>No encuentro ilustraciones de «${esc(a.name)}».</p>`
+      : `<p class="small">Ilustraciones de <b>${esc(a.name)}</b>. Todos los de la mesa verán la que elijas.</p>
+        <div class="lf-arts">${a.all.map(x => `<button data-pick-art="${esc(x.url)}" class="${cur === x.url ? 'on' : ''}" title="${esc(x.set)} · ${esc(x.artist)}"><img src="${esc(x.url)}" alt="" loading="lazy"><span>${esc(x.set)}</span></button>`).join('')}</div>`}
+      <button class="lf-noart ${!cur ? 'on' : ''}" data-pick-art="">Sin ilustración (solo color)</button>
+      <button class="jbtn big" data-close-art>Hecho</button></div></div>`;
+  }
   function endView() {
     const alive = st.players.filter(p => !p.out);
     if (st.done) {
       const ord = st.done.order.map((pid, i) => `${i + 1}º ${nm(pid)}`).join(' · ');
-      return `<div class="lf-end done"><b>${info.reported ? 'Resultado anotado ✔' : st.done.auto ? 'Resultado anotado ✔' : 'Resultado enviado'}</b><span>${ord}</span>${!info.reported && !st.done.auto ? '<small>Falta que lo confirme la tienda.</small>' : ''}
+      return `<div class="lf-end done"><b>${info.reported || st.done.auto ? 'Resultado anotado ✔' : 'Resultado enviado'}</b><span>${ord}</span>${!info.reported && !st.done.auto ? '<small>Falta que lo confirme la tienda.</small>' : ''}
         <a href="${B}/commander/${id}">Volver al torneo</a></div>`;
     }
     if (alive.length === 1 && !st.players.some(p => dead(p) && !dismissed.has(p.id))) {
-      return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>Puestos: ${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
-        <button class="jbtn big" data-finish="">Enviar resultado</button></div>`;
+      return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
+        ${mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
     }
     if (finishPick) {
       return `<div class="lf-end"><b>Fin por tiempo: ¿quién gana la mesa?</b><span>El resto queda por vidas y los eliminados por orden inverso.</span>
@@ -124,20 +148,34 @@
     return '';
   }
 
+  // Apaisado: si el móvil está en vertical, se gira todo 90º (se juega con el móvil de lado en el centro de la mesa)
+  function sizeVars() {
+    const w = window.innerWidth, h = window.innerHeight;
+    const turn = turnPref && h > w;
+    root.style.setProperty('--vw', (turn ? h : w) + 'px');
+    root.style.setProperty('--vh', (turn ? w : h) + 'px');
+    root.classList.toggle('turn', turn);
+  }
+  window.addEventListener('resize', sizeVars);
+  window.addEventListener('orientationchange', () => setTimeout(sizeVars, 150));
+
   function render() {
+    sizeVars();
     if (!pod) { root.innerHTML = pickPodView(); return; }
     if (!st) { root.innerHTML = `<div class="lf-pick"><p>Cargando la mesa ${pod.table}…</p>${err ? `<p class="lf-note">${esc(err)}</p>` : ''}<a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`; return; }
     const n = st.players.length;
-    root.innerHTML = `<div class="lf ${rot ? 'rotm' : ''} n${n}">
-      <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · solo mirando' : ''}</span>
-        <button data-menu aria-expanded="${menu}">Opciones</button></div>
-      ${menu ? `<div class="lf-menu"><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
+    const topN = rot && n >= 3 ? Math.floor(n / 2) : 0;
+    const top = st.players.slice(0, topN), bot = st.players.slice(topN);
+    root.innerHTML = `<div class="lf n${n}">
+      <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
+        <i class="lf-live" title="En directo"></i><button data-menu aria-expanded="${menu}">Opciones</button></div>
+      ${menu ? `<div class="lf-menu"><button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${mine() && !st.done ? '<button data-fin-open>Fin por tiempo</button><button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         <button data-whoami>Cambiar quién soy</button></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
-      <div class="lf-grid">${st.players.map((p, i) => panel(p, i, n)).join('')}</div>
-      ${endView()}${sheet ? sheetView() : ''}</div>`;
+      <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map((p, i) => panel(p, i, true)).join('')}</div>` : ''}<div class="lf-r">${bot.map((p, i) => panel(p, i + topN, false)).join('')}</div></div>
+      ${endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}</div>`;
     bind();
   }
   function bind() {
@@ -146,6 +184,12 @@
     on('[data-me]', b => { const p = S.roster.find(x => x.id === Number(b.dataset.me)); me = p; store.set('mt_me_user', p.username || p.name); err = ''; render(); });
     on('[data-menu]', () => { menu = !menu; render(); });
     on('[data-rot]', () => { rot = !rot; store.set('mt_life_rot', rot ? '1' : '0'); menu = false; render(); });
+    on('[data-turn]', () => { turnPref = !turnPref; store.set('mt_life_turn', turnPref ? '1' : '0'); menu = false; render(); });
+    on('[data-full]', async () => {
+      menu = false;
+      try { await document.documentElement.requestFullscreen(); if (screen.orientation && screen.orientation.lock) await screen.orientation.lock('landscape'); } catch (e) { /* el navegador no lo permite */ }
+      render();
+    });
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
     on('[data-reset]', () => { if (confirm('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
@@ -154,7 +198,10 @@
     on('[data-finish]', b => act({ op: 'finish', winner: b.dataset.finish || '' }).then(() => { finishPick = null; }));
     on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
     on('[data-close]', () => { sheet = null; render(); });
-    on('.lf-sheet', b => {}); // el fondo no cierra para no perder toques
+    on('[data-art]', b => { artSheet = Number(b.dataset.art); render(); loadArts(artSheet); });
+    on('[data-close-art]', () => { artSheet = null; render(); });
+    on('[data-pick-art]', b => { const p = st.players.find(x => x.id === artSheet); const url = b.dataset.pickArt;
+      act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => bindHold(b, () => {
       const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
       if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d }); }
@@ -169,11 +216,26 @@
     on('[data-revive]', b => act({ op: 'revive', pid: Number(b.dataset.revive) }));
   }
 
+  // En directo: el servidor avisa al momento de cada cambio; si se corta, se vuelve a preguntar cada pocos segundos
+  let es = null, lastPush = 0;
+  function live() {
+    if (!pod || !window.EventSource) return;
+    try { es && es.close(); } catch (e) { /* nada */ }
+    es = new EventSource(`${B}/commander/${id}/vidas/${pod.id}/stream`);
+    es.onmessage = e => { lastPush = Date.now(); if (Number(e.data) !== ver) load(false); };
+    es.onopen = () => { lastPush = Date.now(); root.classList.add('pushing'); };
+    es.onerror = () => { root.classList.remove('pushing'); };
+  }
   // Pantalla siempre encendida mientras se juega
   let lock = null;
   async function wake() { try { if ('wakeLock' in navigator && document.visibilityState === 'visible') lock = await navigator.wakeLock.request('screen'); } catch (e) { /* no disponible */ } }
-  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); load(true); } });
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { wake(); load(true); if (!es || es.readyState === 2) live(); } });
   wake();
   render();
-  if (pod) { load(true); setInterval(() => load(false), 1500); }
+  if (pod) {
+    load(true).then(() => loadArts());
+    live();
+    setInterval(() => { if (!es || es.readyState !== 1) load(false); }, 2000);
+    setInterval(() => load(false), 15000);
+  }
 })();

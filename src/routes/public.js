@@ -685,7 +685,28 @@ r.get('/commander/:id/vidas/:pod.json', (req, res) => {
   try { res.set('Cache-Control', 'no-store').json(L.view(Number(req.params.id), Number(req.params.pod))); }
   catch (e) { res.status(e instanceof L.LifeError ? 400 : 500).json({ error: e.message }); }
 });
-r.post('/commander/:id/vidas/:pod', (req, res) => {
+// Fondos: arte del comandante de cada jugador (y todas las ilustraciones del propio, para elegir)
+r.get('/commander/:id/vidas/:pod/artes.json', async (req, res) => {
+  try {
+    const v = L.view(Number(req.params.id), Number(req.params.pod));
+    const ps = db.prepare('SELECT p.id, p.deck FROM cmd_seats s JOIN cmd_players p ON p.id = s.player_id WHERE s.pod_id = ?').all(Number(req.params.pod));
+    const out = {};
+    for (const p of ps) { const l = await L.arts(p.deck); out[p.id] = { name: L.cmdName(p.deck), def: l[0] ? l[0].url : null, ...(Number(req.query.pid) === p.id ? { all: l } : {}) }; }
+    res.set('Cache-Control', 'no-store').json({ version: v.version, arts: out });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+});
+// Cambios al momento (sin esperar al refresco)
+r.get('/commander/:id/vidas/:pod/stream', (req, res) => {
+  const pod = Number(req.params.pod);
+  try { L.view(Number(req.params.id), pod); } catch (e) { return res.status(404).end(); }
+  res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.write('retry: 3000\n\n');
+  const on = (pid, version) => { if (pid === pod) res.write(`data: ${version}\n\n`); };
+  L.bus.on('change', on);
+  const hb = setInterval(() => res.write(': ping\n\n'), 25000);
+  req.on('close', () => { clearInterval(hb); L.bus.off('change', on); });
+});
+r.post('/commander/:id/vidas/:pod', async (req, res) => {
   if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiados toques seguidos: espera un momento' });
   const ev = C.getEvent(Number(req.params.id));
   if (!ev || !ev.public) return res.status(404).json({ error: 'no encontrado' });
@@ -693,6 +714,11 @@ r.post('/commander/:id/vidas/:pod', (req, res) => {
     const by = Number(req.body.by);
     const tok = claimFor(req, res, ev.id, by);
     const op = String(req.body.op || '');
+    if (op === 'art' && req.body.art) {
+      const p = db.prepare('SELECT deck FROM cmd_players WHERE id = ? AND event_id = ?').get(by, ev.id);
+      const list = await L.arts(p && p.deck);
+      if (!list.some(a => a.url === req.body.art)) throw new L.LifeError('Esa ilustración no es de tu comandante');
+    }
     const out = op === 'finish' ? L.finish(ev.id, Number(req.params.pod), by, req.body.winner) : L.apply(ev.id, Number(req.params.pod), by, { ...req.body, op });
     if (['kill', 'revive', 'finish', 'reset'].includes(op)) { C.activity(ev.id, by, 'contador', `mesa ${out.table}: ${op}${req.body.pid ? ' ' + req.body.pid : ''}`, req); require('../rivals').invalidate(); }
     res.json({ ...out, tok });
@@ -833,6 +859,9 @@ r.get('/tv.json', (req, res) => {
     claimed: bnt.filter(b => ['claimed', 'delivered'].includes(b.status) && b.claimed_at && Date.now() - new Date(b.claimed_at.replace(' ', 'T') + 'Z') < 3 * 3600e3)
       .map(b => ({ id: b.id, winner: people.publicName(b.claimed_key), target: people.publicName(b.person_key), reward: b.reward })),
     moments,
+    kills: db.prepare(`SELECT k.pod_id, k.victim_id, k.killer_id, k.how, k.at, pd.table_number tn, v.name vn, v.username vu, kk.name kn, kk.username ku FROM cmd_kills k
+      JOIN cmd_pods pd ON pd.id = k.pod_id JOIN cmd_players v ON v.id = k.victim_id LEFT JOIN cmd_players kk ON kk.id = k.killer_id
+      WHERE k.at >= datetime('now', '-10 minutes') ORDER BY k.at`).all().map(k => ({ id: `${k.pod_id}-${k.victim_id}`, table: k.tn, victim: C.pubName({ name: k.vn, username: k.vu }), killer: k.kn ? C.pubName({ name: k.kn, username: k.ku }) : null, how: k.how })),
     momentsQr: feature('moments') ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/momentos/subir')) : null,
     bountiesQr: bnt.length ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/recompensas')) : null,
   });

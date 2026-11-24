@@ -148,7 +148,25 @@
   let showing = false;
   const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   const seenB = new Set();
+  // Avisos de eliminaciones del contador de vidas
+  const seenK = new Set();
+  let primedK = false;
+  function killToasts(st) {
+    for (const k of st.kills || []) {
+      if (seenK.has(k.id)) continue;
+      seenK.add(k.id);
+      if (!primedK) continue;
+      const d = document.createElement('div');
+      d.className = 'tv-toast';
+      d.innerHTML = `<b>Mesa ${esc(k.table)}</b>${k.killer ? `<span>${esc(k.killer)}</span> elimina a <span>${esc(k.victim)}</span>` : `<span>${esc(k.victim)}</span> queda fuera`}`;
+      document.body.appendChild(d);
+      requestAnimationFrame(() => d.classList.add('on'));
+      setTimeout(() => { d.classList.remove('on'); setTimeout(() => d.remove(), 600); }, 6500);
+    }
+    primedK = true;
+  }
   function celebrateNew(st) {
+    killToasts(st);
     for (const b of st.claimed || []) {
       if (seenB.has(b.id)) continue;
       seenB.add(b.id);
@@ -244,7 +262,7 @@
   }, 1200);
 
   load();
-  setInterval(load, 15000);
+  setInterval(load, 8000);
   setInterval(() => { idx = (idx + 1) % Math.max(slides.length, 1); render(); }, seconds * 1000);
   setInterval(() => {
     const c = document.getElementById('clock');

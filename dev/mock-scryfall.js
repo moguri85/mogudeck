@@ -21,7 +21,7 @@ const RULES = {
 const GCS = ['rhystic study', 'cyclonic rift', 'demonic tutor', 'smothering tithe', "thassa's oracle"];
 const card = (name, [set, cn, eur]) => ({ legalities: { commander: name === 'mana crypt' ? 'banned' : 'legal' }, game_changer: GCS.includes(name), type_line: (RULES[name] || ['Artifact'])[0], color_identity: (RULES[name] || ['', []])[1], oracle_text: '', keywords: [], object: 'card', id: `${set}-${cn}`, cardmarket_id: cmId(set, cn), name: name.replace(/(^|\s|\/\/\s)\S/g, m => m.toUpperCase()), set, collector_number: cn,
   set_name: set.toUpperCase() + ' set', prices: { eur, eur_foil: eur ? (parseFloat(eur) * 2).toFixed(2) : null },
-  image_uris: { small: `https://example.invalid/${set}/${cn}.jpg` }, scryfall_uri: `https://scryfall.com/card/${set}/${cn}` });
+  image_uris: { small: `https://example.invalid/${set}/${cn}.jpg`, art_crop: `http://localhost:4030/art/${set}-${cn}.svg` }, artist: 'Artista ' + set.toUpperCase(), scryfall_uri: `https://scryfall.com/card/${set}/${cn}` });
 function cmId(set, cn) { let h = 7; for (const ch of set + cn) h = (h * 31 + ch.charCodeAt(0)) % 900000; return 100000 + h; }
 const find = n => Object.keys(CARDS).find(k => k === n.toLowerCase() || k.split(' // ')[0] === n.toLowerCase());
 http.createServer((req, res) => {
@@ -83,6 +83,12 @@ http.createServer((req, res) => {
     if (slug === 'no-existe') { res.writeHead(404); return res.end('no'); }
     res.writeHead(200, { 'Content-Type': 'text/html' });
     return res.end(`<html><head><meta property="og:image" content="http://localhost:4030/img/${slug}.png?Expires=1&amp;Signature=x"></head></html>`);
+  }
+  // Arte de prueba: degradado distinto por impresión
+  if (url.pathname.startsWith('/art/')) {
+    let h = 0; for (const ch of url.pathname) h = (h * 31 + ch.charCodeAt(0)) % 360;
+    res.writeHead(200, { 'Content-Type': 'image/svg+xml' });
+    return res.end(`<svg xmlns="http://www.w3.org/2000/svg" width="626" height="457"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="hsl(${h},70%,45%)"/><stop offset="1" stop-color="hsl(${(h + 120) % 360},60%,25%)"/></linearGradient></defs><rect width="100%" height="100%" fill="url(#g)"/><circle cx="420" cy="160" r="110" fill="hsl(${(h + 60) % 360},80%,70%)" opacity=".6"/><path d="M0 380 L200 250 L330 330 L626 180 L626 457 L0 457Z" fill="#0008"/></svg>`);
   }
   if (url.pathname.startsWith('/img/')) {
     const png = require('fs').readFileSync(process.env.MOCK_CARD_PNG || __filename);

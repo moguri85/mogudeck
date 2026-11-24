@@ -103,7 +103,8 @@
     const status = !pod.reported ? '<span class="chip live sm">Jugando</span>' : pod.draw ? '<span class="chip draw sm">Empate</span>' : '<span class="chip win sm">Terminada</span>';
     return `<div class="podc ${mine ? 'me' : ''} ${hit ? 'hit' : ''} ${pod.reported ? 'done' : ''}">
       <div class="podc-h"><b>Mesa ${pod.table}</b><span>${pod.size} jug. · ${podPts(pod.size)}</span>${status}</div>
-      ${pod.players.map(x => `<div class="podc-p ${pod.winner === x.id ? 'win' : ''} ${isMe(x.id) ? 'me' : ''}"><i>${x.seat}º</i><span>${esc(x.name)}${pod.winner === x.id ? ' ' + window.UI.trophy : ''}${x.deck ? `<small class="deck">${esc(x.deck)}</small>` : ''}</span><em>${pod.reported ? `${x.place && byPlaces() ? `${x.place}º · ` : ''}+${x.got}` : `${x.pts} pts`}</em></div>`).join('')}
+      ${pod.players.map(x => { const lv = !pod.reported && pod.life && pod.life[x.id]; return `<div class="podc-p ${pod.winner === x.id ? 'win' : ''} ${isMe(x.id) ? 'me' : ''} ${lv && lv.out ? 'ko' : ''}"><i>${x.seat}º</i><span>${esc(x.name)}${pod.winner === x.id ? ' ' + window.UI.trophy : ''}${x.deck ? `<small class="deck">${esc(x.deck)}</small>` : ''}</span><em>${pod.reported ? `${x.place && byPlaces() ? `${x.place}º · ` : ''}+${x.got}` : lv ? (lv.out ? 'fuera' : `<b class="hp">${lv.life}</b> vidas`) : `${x.pts} pts`}</em></div>`; }).join('')}
+      ${!pod.reported && snap.status === 'running' ? `<a class="podc-live" href="${B}/commander/${id}/vidas?mesa=${pod.id}">${pod.life ? 'Ver vidas en directo' : 'Contador de vidas'}</a>` : ''}
     </div>`;
   }
 
@@ -228,7 +229,7 @@
   render();
   setInterval(tickClocks, 1000);
   if (snap.status !== 'finished') {
-    setInterval(() => refresh(false), 15000);
+    setInterval(() => refresh(false), snap.status === 'running' ? 6000 : 15000);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refresh(false); });
     window.addEventListener('online', () => refresh(false));
   }

@@ -3,6 +3,10 @@
 // El estado vive en el servidor para que todos los móviles de la mesa (o uno en el centro) vean lo mismo.
 const { db, addColumn } = require('./db');
 const C = require('./commander');
+const { EventEmitter } = require('events');
+// Aviso al momento a todos los móviles que miran una mesa (Server-Sent Events)
+const bus = new EventEmitter();
+bus.setMaxListeners(500);
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS cmd_life (
@@ -106,10 +110,19 @@ function apply(eventId, podId, byId, body) {
         break;
       }
       case 'reopen': state.done = null; log('Mesa reabierta'); break;
+      case 'art': {
+        const p = P(body.pid);
+        if (p.id !== byId) throw new LifeError('Cada jugador cambia solo su propio fondo');
+        p.art = body.art ? String(body.art).slice(0, 300) : null;
+        p.artOff = !body.art;
+        break;
+      }
       default: throw new LifeError('Acción no válida');
     }
     db.prepare("UPDATE cmd_life SET state = ?, version = version + 1, updated_at = datetime('now') WHERE pod_id = ?").run(JSON.stringify(state), podId);
-    return view(eventId, podId);
+    const v = view(eventId, podId);
+    setImmediate(() => bus.emit('change', podId, v.version));
+    return v;
   })();
 }
 
@@ -141,8 +154,36 @@ function finish(eventId, podId, byId, winnerId) {
     state.done = { winner: winner.id, order, at: Date.now(), auto: !!ev.life_auto };
     state.log.unshift({ at: Date.now(), by: byId, txt: `${winner.name} gana la mesa` });
     db.prepare("UPDATE cmd_life SET state = ?, version = version + 1, updated_at = datetime('now') WHERE pod_id = ?").run(JSON.stringify(state), podId);
-    return view(eventId, podId);
+    const v = view(eventId, podId);
+    setImmediate(() => bus.emit('change', podId, v.version));
+    return v;
   })();
+}
+
+// ---------- Arte del comandante (Scryfall, una ilustración por impresión distinta) ----------
+const API = (process.env.SCRYFALL_URL || 'https://api.scryfall.com').replace(/\/$/, '');
+const artCache = new Map();
+const cmdName = deck => String(deck || '').split(/\s+\+\s+|\s*\/\/\s*/)[0].trim();
+async function arts(deck) {
+  const name = cmdName(deck);
+  if (!name) return [];
+  const k = name.toLowerCase();
+  const c = artCache.get(k);
+  if (c && Date.now() - c.at < 24 * 3600e3) return c.list;
+  let list = [];
+  try {
+    const q = encodeURIComponent(`!"${name}"`);
+    const r = await fetch(`${API}/cards/search?q=${q}&unique=art&order=released&dir=desc&include_extras=true`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+    if (r.ok) {
+      const j = await r.json();
+      list = (j.data || []).map(x => {
+        const iu = x.image_uris || (x.card_faces && x.card_faces[0] && x.card_faces[0].image_uris) || {};
+        return iu.art_crop ? { url: iu.art_crop, set: x.set_name || x.set, artist: x.artist || '' } : null;
+      }).filter(Boolean).slice(0, 30);
+    }
+  } catch (e) { /* sin red: sin fondo */ }
+  artCache.set(k, { at: Date.now(), list });
+  return list;
 }
 
 // Resumen de vidas por mesa (para la TV y la página del torneo)
@@ -158,4 +199,4 @@ function killsByPod() {
 }
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
