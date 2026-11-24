@@ -222,19 +222,16 @@
       step.t = setTimeout(() => {
         step.t = null; step.long = true; fn(5);
         if (tip10) { tip10 = false; store.set('mt_life_tip5', '1'); }
-        step.iv = setInterval(() => step.fn && step.fn(5), 600);
+        const t0 = Date.now();
+        step.iv = setInterval(() => { if (Date.now() - t0 > 8000) return stepStop(false); if (step.fn) step.fn(5); }, 600);
       }, 450);
     });
     el.addEventListener('contextmenu', e => e.preventDefault());
   }
   window.addEventListener('pointerup', () => stepStop(true));
   window.addEventListener('pointercancel', () => stepStop(false));
-  let hold = null;
-  function bindHold(el, fn) {
-    const stop = () => { clearTimeout(hold); clearInterval(hold); hold = null; };
-    el.addEventListener('pointerdown', e => { e.preventDefault(); fn(); hold = setTimeout(() => { hold = setInterval(fn, 140); }, 450); });
-    ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => el.addEventListener(ev, stop));
-  }
+  window.addEventListener('blur', () => stepStop(false));
+  document.addEventListener('visibilitychange', () => stepStop(false));
 
   function pickPodView() {
     return `<div class="lf-pick"><h1>Contador de vidas</h1><p>${esc(S.name)} · ronda ${S.round || '—'}</p>
@@ -305,7 +302,9 @@
   function sheetView() {
     const p = st.players.find(x => x.id === sheet);
     if (!p) return '';
-    const row = (label, op, extra, val, max) => `<div class="lf-row"><span>${label}</span><button data-op="${op}" ${extra} data-d="-1">−</button><b class="${val >= max ? 'lethal' : ''}">${val}</b><button data-op="${op}" ${extra} data-d="1">+</button></div>`;
+    // Botones sueltos de 1 y de 5 (sin mantener pulsado: en algunos móviles se quedaba sumando solo)
+    const bt = (op, extra, d) => `<button data-op="${op}" ${extra} data-d="${d}" aria-label="${d > 0 ? 'Sumar' : 'Restar'} ${Math.abs(d)}">${d > 0 ? '+' : '−'}${Math.abs(d)}</button>`;
+    const row = (label, op, extra, val, max) => `<div class="lf-row"><span>${label}</span>${bt(op, extra, -5)}${bt(op, extra, -1)}<b class="${val >= max ? 'lethal' : ''}">${val}</b>${bt(op, extra, 1)}${bt(op, extra, 5)}</div>`;
     return `<div class="lf-sheet" role="dialog" aria-label="Daño a ${esc(p.name)}"><div class="lf-sh-in"><h2>Daño que recibe ${esc(p.name)}</h2>
       <h3>Daño de comandante (21 elimina)</h3>${st.players.filter(x => x.id !== p.id).map(o => row(`de ${esc(o.name)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}"`, p.cmd[o.id] || 0, 21)).join('')}
       <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
@@ -436,11 +435,11 @@
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
-      ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
-        ${CAS && !st.sudden ? '<button data-sudden="1">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
+        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+      ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
+        ${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? '<button data-new>Cambiar jugadores</button>' : '<button data-whoami>Cambiar quién soy</button>'}
-        <p class="small">Para que la pantalla no se apague, mejor instálalo: menú del navegador › «Añadir a pantalla de inicio».</p></div>` : ''}
+        <p class="small">Para que la pantalla no se apague y se vea a pantalla completa, instálalo: ${/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'botón Compartir › «Añadir a pantalla de inicio» (no funciona en modo privado)' : 'menú del navegador › «Añadir a pantalla de inicio»'}.</p></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
@@ -514,12 +513,12 @@
     on('[data-undo]', b => act({ op: 'undo', id: b.dataset.undo }).then(loadHist));
     on('[data-pick-art]', b => { const p = st.players.find(x => x.id === artSheet); const url = b.dataset.pickArt;
       act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
-    root.querySelectorAll('.lf-sheet [data-op]').forEach(b => bindHold(b, () => {
+    root.querySelectorAll('.lf-sheet [data-op]').forEach(b => { b.onclick = () => {
       const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
       if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d, rd: nv - cur }); }
       else { const o = p.poison; p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d, rd: p.poison - o }); }
       if (navigator.vibrate) navigator.vibrate(6);
-    }));
+    }; });
     on('[data-kill]', b => { const pid = Number(b.dataset.kill), by = b.dataset.by; const p = st.players.find(x => x.id === pid);
       const how = b.dataset.how === 'desempate' ? 'desempate' : !by ? 'concede' : (p.cmd[by] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
       act({ op: 'kill', pid, killer: by, how }, () => { p.out = true; p.killer = by ? Number(by) : null; p.how = how; p.ord = st.players.filter(x => x.out).length; }); });

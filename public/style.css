@@ -1623,3 +1623,14 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-sugs button { border: 1px solid #ddd; background: #f4f4f4; color: #111; border-radius: 99px; padding: 6px 12px; min-height: 36px; font: 600 13px var(--font); cursor: pointer; }
 .lf-setup .lf-sugs button { background: #1f1f1f; border-color: #444; color: #fff; }
 .lf-sh-in h3 { margin: 14px 0 4px; }
+/* Daño de comandante y veneno: botones de 1 y de 5 */
+.lf-row { grid-template-columns: minmax(0, 1fr) repeat(2, 48px) 48px repeat(2, 48px); gap: 6px; }
+.lf-row button { font-size: 17px; padding: 0; }
+.lf-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 400px) { .lf-row { grid-template-columns: minmax(0, 1fr) repeat(2, 42px) 40px repeat(2, 42px); gap: 4px; } }
+/* Barra: que quepa siempre (el título se recorta y, si aun así no cabe, se desliza) */
+.lf-bar { overflow-x: auto; scrollbar-width: none; gap: 6px; } .lf-bar::-webkit-scrollbar { display: none; }
+.lf-bar span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-bar button, .lf-bar .lf-clock { flex: none; white-space: nowrap; }
+.lf-bar button { padding: 6px 12px; font-size: 13.5px; }
+.lf-menu button.hot { background: #5a1010; border-color: #b42318; }
