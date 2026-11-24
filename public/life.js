@@ -477,9 +477,9 @@
   }
   // Confirmaciones dentro de la página: el confirm() del navegador, en iPhone, ofrece «Eliminar cuadros de diálogo» y luego ya no deja confirmar nada
   let asking = null;
-  function ask(text, yes, fn) { menu = false; asking = { text, yes, fn }; render(); }
+  function ask(text, yes, fn, alt) { menu = false; asking = { text, yes, fn, alt }; render(); }
   const askView = () => `<div class="lf-sheet lf-ask" role="alertdialog" aria-label="${esc(asking.text)}"><div class="lf-sh-in"><p>${esc(asking.text)}</p>
-    <div class="lf-endb"><button class="jbtn big" data-ask-yes>${esc(asking.yes)}</button><button class="jbtn big ghost" data-ask-no>Cancelar</button></div></div></div>`;
+    <div class="lf-endb"><button class="jbtn big" data-ask-yes>${esc(asking.yes)}</button>${asking.alt ? `<button class="jbtn big alt" data-ask-alt>${esc(asking.alt.label)}</button>` : ''}<button class="jbtn big ghost" data-ask-no>Cancelar</button></div></div></div>`;
   function bind() {
     root.querySelectorAll('[data-z]').forEach(b => bindStep(b, k => bump(Number(b.dataset.z), Number(b.dataset.d) * k)));
     const on = (sel, fn) => root.querySelectorAll(sel).forEach(b => { b.onclick = () => fn(b); });
@@ -493,15 +493,19 @@
       render();
     });
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
-    on('[data-reset]', () => ask(CAS ? `¿Reiniciar la partida? Todos vuelven a ${st.start} vidas, mismos jugadores.` : '¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.', 'Reiniciar', () => act({ op: 'reset' })));
+    const newGame = () => { st = null; hist = null; saveCas(); render(); };
+    on('[data-reset]', () => (CAS
+      ? ask('¿Cómo quieres reiniciar?', `Mismos jugadores (${st.start} vidas)`, () => act({ op: 'reset' }), { label: 'Partida nueva (elegir jugadores y vidas)', fn: newGame })
+      : ask('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.', 'Reiniciar', () => act({ op: 'reset' }))));
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
     on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; const go = () => act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; });
       if (on) ask('¿Pasar a muerte súbita? El primer daño de un rival elimina.', 'Muerte súbita', go); else { menu = false; go(); } });
     on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-rematch]', () => act({ op: 'reset' }));
-    on('[data-new]', () => ask('¿Empezar otra partida con otros jugadores? Se borra la actual.', 'Cambiar jugadores', () => { st = null; hist = null; saveCas(); render(); }));
+    on('[data-new]', () => ask('¿Empezar otra partida con otros jugadores? Se borra la actual.', 'Cambiar jugadores', newGame));
     on('[data-ask-no]', () => { asking = null; render(); });
     on('[data-ask-yes]', () => { const a = asking; asking = null; a.fn(); render(); });
+    on('[data-ask-alt]', () => { const a = asking; asking = null; a.alt.fn(); render(); });
     root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = async e => {
       e.preventDefault(); const p = st.players.find(x => x.id === Number(f.dataset.cmdr)); const v = f.cmdr.value.trim();
       if (!v) { p.deck = ''; cmdMsg = null; saveCas(); arts[p.id] = {}; render(); return; }
