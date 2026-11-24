@@ -7,10 +7,10 @@ const config = require('./config');
 
 const { STATUS } = melee;
 let running = false;
-let lastListSync = 0;
+let lastListSync = 0, lastRecheck = 0;
 let lastError = null;
 
-const state = () => ({ running, lastListSync, lastError, configured: melee.configured() });
+const state = () => ({ running, lastListSync, lastRecheck, lastError, configured: melee.configured() });
 
 function userKey(p) {
   if (p.UserIdentity) return p.UserIdentity;
@@ -175,6 +175,21 @@ async function syncLive() {
   }
 }
 
+// Torneos ya acabados: se vuelven a leer de vez en cuando por si en Melee corrigen un resultado o la clasificación
+async function syncRecheck() {
+  const since = new Date(Date.now() - config.syncRecheckDays * 864e5).toISOString().slice(0, 10);
+  const ts = db.prepare(`SELECT id, name FROM tournaments WHERE status = ? AND hidden = 0
+    AND substr(COALESCE(start_date, last_pair, first_seen), 1, 10) >= ? ORDER BY COALESCE(start_date, last_pair) DESC`).all(STATUS.ENDED, since);
+  let n = 0;
+  for (const t of ts) {
+    try { await syncDetails(t.id); n++; } catch (e) { log('warn', `Revisión de ${t.name} (${t.id}): ${e.message}`); }
+    await new Promise(r => setTimeout(r, 1500)); // sin agobiar a la API de Melee
+  }
+  lastRecheck = Date.now();
+  if (n) log('info', `Revisados ${n} torneos acabados de los últimos ${config.syncRecheckDays} días`);
+  try { require('./rivals').invalidate(); require('./badges').invalidate(); } catch (e) { /* módulos opcionales */ }
+}
+
 function publicUrl(path) {
   const base = setting('base_url').replace(/\/$/, '');
   return base ? base + path : '';
@@ -277,7 +292,7 @@ async function tick(kind) {
   if (running || !melee.configured()) return;
   running = true;
   try {
-    if (kind === 'list') await syncList(); else await syncLive();
+    if (kind === 'list') await syncList(); else if (kind === 'recheck') await syncRecheck(); else await syncLive();
     lastError = null;
   } catch (e) {
     lastError = e.message;
@@ -296,6 +311,10 @@ function start() {
   setTimeout(() => tick('list'), 2000);
   setInterval(() => tick('list'), config.syncListEvery * 1000);
   setInterval(() => { if (data.liveTournaments().length) tick('live'); }, config.syncLiveEvery * 1000);
+  // Revisión de los acabados: si coincide con otra sincronización, se reintenta al minuto
+  const recheck = () => (running ? setTimeout(recheck, 60e3) : tick('recheck'));
+  setTimeout(recheck, 5 * 60e3);
+  setInterval(recheck, config.syncRecheckEvery * 1000);
 }
 
 async function forceTournament(tid) {

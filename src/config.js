@@ -17,6 +17,8 @@ module.exports = {
   // Intervalos de sincronización (segundos)
   syncListEvery: Number(env('SYNC_LIST_SECONDS', 600)),
   syncLiveEvery: Number(env('SYNC_LIVE_SECONDS', 20)),
+  syncRecheckEvery: Number(env('SYNC_RECHECK_SECONDS', 3600)),
+  syncRecheckDays: Number(env('SYNC_RECHECK_DAYS', 30)),
   syncEnabled: env('SYNC_ENABLED', '1') === '1',
   trustProxy: env('TRUST_PROXY', '1') === '1',
   cookieSecure: env('COOKIE_SECURE', '0') === '1',
