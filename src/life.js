@@ -13,6 +13,12 @@ CREATE TABLE IF NOT EXISTS cmd_life (
   pod_id INTEGER PRIMARY KEY REFERENCES cmd_pods(id) ON DELETE CASCADE,
   state TEXT NOT NULL, version INTEGER NOT NULL DEFAULT 1, updated_at TEXT DEFAULT (datetime('now'))
 );
+CREATE TABLE IF NOT EXISTS cmd_life_log (
+  id INTEGER PRIMARY KEY, pod_id INTEGER NOT NULL REFERENCES cmd_pods(id) ON DELETE CASCADE, by_id INTEGER,
+  kind TEXT NOT NULL, pid INTEGER, from_id INTEGER, delta INTEGER, before_v INTEGER, after_v INTEGER, life_after INTEGER,
+  text TEXT, at INTEGER NOT NULL, updated_at INTEGER NOT NULL, undone INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_life_log_pod ON cmd_life_log(pod_id, id);
 CREATE TABLE IF NOT EXISTS cmd_kills (
   pod_id INTEGER NOT NULL REFERENCES cmd_pods(id) ON DELETE CASCADE, victim_id INTEGER NOT NULL, killer_id INTEGER,
   how TEXT, ord INTEGER, at TEXT DEFAULT (datetime('now')), PRIMARY KEY (pod_id, victim_id)
@@ -58,6 +64,42 @@ function guess(p) {
   return { killer: null, how: 'dano' };
 }
 
+// ---------- Historial del contador ----------
+// Los toques seguidos sobre el mismo contador se juntan en un solo apunte: si das 5 de daño y corriges 1, queda «−4».
+// El apunte se cierra cuando se toca otro jugador u otro contador, o tras unos segundos sin tocar.
+const MERGE_MS = 4000;
+function trackChange(podId, byId, kind, pid, fromId, before, after, lifeAfter) {
+  const d = after - before;
+  if (!d) return;
+  const now = Date.now();
+  const last = db.prepare('SELECT * FROM cmd_life_log WHERE pod_id = ? ORDER BY id DESC LIMIT 1').get(podId);
+  if (last && !last.undone && last.kind === kind && last.pid === pid && (last.from_id || null) === (fromId || null) && last.by_id === byId && now - last.updated_at <= MERGE_MS) {
+    const nd = last.delta + d;
+    if (nd === 0) db.prepare('DELETE FROM cmd_life_log WHERE id = ?').run(last.id);
+    else db.prepare('UPDATE cmd_life_log SET delta = ?, after_v = ?, life_after = ?, updated_at = ? WHERE id = ?').run(nd, after, lifeAfter, now, last.id);
+    return;
+  }
+  db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, from_id, delta, before_v, after_v, life_after, at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .run(podId, byId, kind, pid, fromId || null, d, before, after, lifeAfter, now, now);
+}
+function note(podId, byId, kind, pid, text) {
+  const now = Date.now();
+  db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, text, at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(podId, byId, kind, pid || null, text, now, now);
+}
+function history(eventId, podId, limit = 300) {
+  const x = load(eventId, podId, false);
+  const names = new Map(x.players.map(p => [p.id, C.pubName(p)]));
+  const nm = id => names.get(id) || '—';
+  const sg = n => (n > 0 ? `+${n}` : `−${-n}`);
+  return db.prepare('SELECT * FROM cmd_life_log WHERE pod_id = ? ORDER BY id DESC LIMIT ?').all(podId, limit).map(r => {
+    let txt = r.text;
+    if (r.kind === 'life') txt = `${nm(r.pid)}: ${sg(r.delta)} ${Math.abs(r.delta) === 1 ? 'vida' : 'vidas'} (${r.before_v} → ${r.after_v})`;
+    else if (r.kind === 'poison') txt = `${nm(r.pid)}: ${sg(r.delta)} veneno (${r.before_v} → ${r.after_v})`;
+    else if (r.kind === 'cmd') txt = `${nm(r.pid)}: ${sg(r.delta)} de comandante de ${nm(r.from_id)} (${r.before_v} → ${r.after_v}; vidas ${r.life_after})`;
+    return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, undone: !!r.undone, canUndo: ['life', 'poison', 'cmd'].includes(r.kind) && !r.undone };
+  });
+}
+
 function apply(eventId, podId, byId, body) {
   return db.transaction(() => {
     const x = load(eventId, podId);
@@ -69,15 +111,39 @@ function apply(eventId, podId, byId, body) {
     const P = id => { const p = state.players.find(q => q.id === Number(id)); if (!p) throw new LifeError('Ese jugador no está en la mesa'); return p; };
     const d = Math.max(-50, Math.min(50, Math.round(Number(body.d) || 0)));
     const nm = id => (state.players.find(q => q.id === Number(id)) || {}).name || '—';
-    const log = txt => { state.log.unshift({ at: Date.now(), by: byId, txt }); state.log = state.log.slice(0, 40); };
+    const log = (txt, kind = 'note', pid = null) => { state.log.unshift({ at: Date.now(), by: byId, txt }); state.log = state.log.slice(0, 40); note(podId, byId, kind, pid, txt); };
     switch (body.op) {
-      case 'life': { const p = P(body.pid); if (p.out) throw new LifeError(`${p.name} ya está eliminado`); p.life = Math.max(-99, Math.min(999, p.life + d)); break; }
-      case 'poison': { const p = P(body.pid); p.poison = Math.max(0, Math.min(99, p.poison + d)); break; }
+      case 'life': {
+        const p = P(body.pid); if (p.out) throw new LifeError(`${p.name} ya está eliminado`);
+        const b = p.life; p.life = Math.max(-99, Math.min(999, p.life + d));
+        trackChange(podId, byId, 'life', p.id, null, b, p.life, p.life);
+        break;
+      }
+      case 'poison': {
+        const p = P(body.pid); const b = p.poison; p.poison = Math.max(0, Math.min(99, p.poison + d));
+        trackChange(podId, byId, 'poison', p.id, null, b, p.poison, p.life);
+        break;
+      }
       case 'cmd': {
         const p = P(body.pid), f = P(body.from);
         if (p.id === f.id) throw new LifeError('El daño de comandante es de otro jugador');
         const cur = p.cmd[f.id] || 0, nv = Math.max(0, Math.min(99, cur + d));
         p.cmd[f.id] = nv; p.life = Math.max(-99, p.life - (nv - cur));
+        trackChange(podId, byId, 'cmd', p.id, f.id, cur, nv, p.life);
+        break;
+      }
+      // Deshacer un apunte del historial (el último de vidas, veneno o comandante que no esté deshecho)
+      case 'undo': {
+        const r = db.prepare("SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND kind IN ('life','poison','cmd') ORDER BY id DESC LIMIT 1").get(podId);
+        if (!r) throw new LifeError('No hay nada que deshacer');
+        if (body.id && Number(body.id) !== r.id) throw new LifeError('Solo se puede deshacer el último cambio de vidas');
+        const p = P(r.pid);
+        if (p.out) throw new LifeError(`${p.name} está eliminado: usa «Deshacer» en su panel primero`);
+        if (r.kind === 'life') p.life -= r.delta;
+        else if (r.kind === 'poison') p.poison = Math.max(0, p.poison - r.delta);
+        else { p.cmd[r.from_id] = Math.max(0, (p.cmd[r.from_id] || 0) - r.delta); p.life += r.delta; }
+        db.prepare('UPDATE cmd_life_log SET undone = 1 WHERE id = ?').run(r.id);
+        log(`Deshecho: ${history(eventId, podId, 400).find(h => h.id === r.id).txt}`, 'undo', p.id);
         break;
       }
       case 'kill': {
@@ -89,7 +155,7 @@ function apply(eventId, podId, byId, body) {
         p.how = HOW[body.how] ? body.how : guess(p).how;
         p.ord = state.players.filter(q => q.out).length;
         db.prepare('INSERT OR REPLACE INTO cmd_kills (pod_id, victim_id, killer_id, how, ord) VALUES (?, ?, ?, ?, ?)').run(podId, p.id, p.killer, p.how, p.ord);
-        log(killer ? `${killer.name} elimina a ${p.name}` : `${p.name} queda fuera (${HOW[p.how]})`);
+        log(killer ? `${killer.name} elimina a ${p.name}` : `${p.name} queda fuera (${HOW[p.how]})`, 'kill', p.id);
         break;
       }
       case 'revive': {
@@ -99,14 +165,14 @@ function apply(eventId, podId, byId, body) {
         if (p.life <= 0) p.life = 1;
         db.prepare('DELETE FROM cmd_kills WHERE pod_id = ? AND victim_id = ?').run(podId, p.id);
         state.players.filter(q => q.out).sort((a, b) => a.ord - b.ord).forEach((q, i) => { q.ord = i + 1; db.prepare('UPDATE cmd_kills SET ord = ? WHERE pod_id = ? AND victim_id = ?').run(q.ord, podId, q.id); });
-        log(`${p.name} vuelve a la partida`);
+        log(`${p.name} vuelve a la partida`, 'revive', p.id);
         break;
       }
       case 'reset': {
         const n = fresh(ev, x.players);
         Object.assign(state, n);
         db.prepare('DELETE FROM cmd_kills WHERE pod_id = ?').run(podId);
-        log('Contador reiniciado');
+        log('Contador reiniciado', 'reset');
         break;
       }
       case 'reopen': state.done = null; log('Mesa reabierta'); break;
@@ -151,6 +217,7 @@ function finish(eventId, podId, byId, winnerId) {
     }
     state.done = { winner: winner.id, order, at: Date.now(), auto: !!ev.life_auto };
     state.log.unshift({ at: Date.now(), by: byId, txt: `${winner.name} gana la mesa` });
+    note(podId, byId, 'finish', winner.id, `${winner.name} gana la mesa · ${order.map((id, i) => `${i + 1}º ${state.players.find(p => p.id === id).name}`).join(', ')}`);
     db.prepare("UPDATE cmd_life SET state = ?, version = version + 1, updated_at = datetime('now') WHERE pod_id = ?").run(JSON.stringify(state), podId);
     const v = view(eventId, podId);
     setImmediate(() => bus.emit('change', podId, v.version));
@@ -197,4 +264,4 @@ function killsByPod() {
 }
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };

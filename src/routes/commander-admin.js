@@ -228,7 +228,7 @@ function podCard(ev, pod, { editable = true, swappable = false } = {}) {
     <button name="accion" value="rechazar" class="btn small ghost">Rechazar</button></form></div>` : '';
   const kl = require('../life').killsOf(pod.id);
   const lifeOn = db.prepare('SELECT 1 FROM cmd_life WHERE pod_id = ?').get(pod.id);
-  const kills = kl.length || lifeOn ? html`<div class="podkills small">${lifeOn ? html`<span class="pill">Contador de vidas</span> ` : ''}${kl.map(k => html`<span>${k.killer_id ? html`<b>${nameOf(k.killer_id)}</b> eliminó a ${nameOf(k.victim_id)}` : html`${nameOf(k.victim_id)} quedó fuera`}</span>`)}</div>` : '';
+  const kills = kl.length || lifeOn ? html`<div class="podkills small">${lifeOn ? html`<a class="pill" href="${base(ev)}/mesa/${pod.id}/historial">Contador de vidas · historial</a> ` : ''}${kl.map(k => html`<span>${k.killer_id ? html`<b>${nameOf(k.killer_id)}</b> eliminó a ${nameOf(k.victim_id)}` : html`${nameOf(k.victim_id)} quedó fuera`}</span>`)}</div>` : '';
   const pts = p => (pod.reported ? C.pointsFor(ev, pod, p.place || (winner === p.id ? 1 : null)) : null);
   const head = byPlaces ? `${pod.size} jugadores · ${C.placesList(ev).slice(0, pod.size).join('-')} pts`
     : `${pod.size} jugadores · ganador ${pod.size >= 4 ? ev.pts_win4 ?? 4 : ev.pts_win3 ?? 3} pts`;
@@ -688,6 +688,22 @@ r.post('/:id/final', async (req, res) => {
 r.post('/:id/deshacer', (req, res) => {
   const ev = loadEv(req, res); if (!ev) return;
   try { C.undoLastRound(ev.id); back(res, base(ev), 'Ronda deshecha'); } catch (e) { back(res, base(ev), e.message, true); }
+});
+
+// Historial completo del contador de vidas de una mesa (para resolver dudas)
+r.get('/:id/mesa/:pod/historial', (req, res) => {
+  const ev = loadEv(req, res); if (!ev) return;
+  const L = require('../life');
+  let items;
+  try { items = L.history(ev.id, Number(req.params.pod), 2000); } catch (e) { return res.redirect(base(ev) + '?err=' + encodeURIComponent(e.message)); }
+  const t = ms => new Date(ms).toLocaleString('es-ES', { timeZone: require('../config').tz, hour: '2-digit', minute: '2-digit', second: '2-digit', day: '2-digit', month: '2-digit' });
+  const pod = db.prepare('SELECT table_number FROM cmd_pods WHERE id = ?').get(Number(req.params.pod));
+  res.send(String(adminPage(req, `Historial · mesa ${pod ? pod.table_number : ''}`, html`
+    <p><a href="${base(ev)}#pod-${Number(req.params.pod)}">← Volver al torneo</a> · <a href="/commander/${ev.id}/vidas?mesa=${Number(req.params.pod)}" target="_blank">Abrir el contador</a></p>
+    <p class="small muted">Cada fila es un apunte: los toques seguidos de una misma persona sobre el mismo contador se juntan (si daban 5 y quitaban 1, queda −4). Lo tachado se deshizo. Hora de la última modificación de cada apunte; «quién» es el móvil que lo anotó.</p>
+    ${items.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Hora</th><th>Cambio</th><th>Quién lo anotó</th></tr></thead><tbody>
+      ${items.map(h => html`<tr class="${h.undone ? 'dim' : ''}"><td class="nowrap small">${t(h.updated || h.at)}</td><td>${h.undone ? html`<s>${h.txt}</s>` : h.kind === 'kill' || h.kind === 'finish' ? html`<b>${h.txt}</b>` : h.txt}</td><td class="small">${h.by}</td></tr>`)}
+    </tbody></table></div>` : html`<p class="muted">Sin cambios todavía.</p>`}`)));
 });
 
 r.post('/:id/mesa/:pod', (req, res) => {

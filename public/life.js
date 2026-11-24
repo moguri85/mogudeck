@@ -10,7 +10,7 @@
   let turnPref = store.get('mt_life_turn') !== '0'; // apaisado aunque el móvil esté en vertical
   const dismissed = new Set();
   const bubbles = {};
-  let menu = false, sheet = null, artSheet = null;
+  let menu = false, sheet = null, artSheet = null, hist = null;
   let arts = {}; // pid → { name, def, all? }
 
   function resolveMe() {
@@ -50,7 +50,7 @@
       const r = await fetch(`${B}/commander/${id}/vidas/${pod.id}.json`, { cache: 'no-store' });
       const j = await r.json();
       if (!r.ok) { err = j.error || 'Error'; render(); return; }
-      if (force || (!busy && j.version !== ver)) { st = j.state; ver = j.version; info = j; render(); }
+      if (force || (!busy && j.version !== ver)) { const changed = j.version !== ver; st = j.state; ver = j.version; info = j; render(); if (changed && hist) loadHist(); }
     } catch (e) { /* sin conexión: se reintenta */ }
   }
   async function loadArts(pid) {
@@ -131,6 +131,19 @@
       <button class="lf-noart ${!cur ? 'on' : ''}" data-pick-art="">Sin ilustración (solo color)</button>
       <button class="jbtn big" data-close-art>Hecho</button></div></div>`;
   }
+  const hhmmss = t => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  async function loadHist() {
+    try { const j = await (await fetch(`${B}/commander/${id}/vidas/${pod.id}/historial.json`, { cache: 'no-store' })).json(); hist = j.items || []; } catch (e) { hist = hist || []; }
+    render();
+  }
+  function histView() {
+    const first = (hist || []).find(h => h.canUndo);
+    return `<div class="lf-sheet" role="dialog" aria-label="Historial de la mesa"><div class="lf-sh-in"><h2>Historial de la mesa</h2>
+      <p class="small">Los toques seguidos sobre el mismo contador se juntan en un apunte (si das 5 y quitas 1, queda −4). Se guarda todo por si hay alguna duda.</p>
+      ${!hist ? '<p>Cargando…</p>' : !hist.length ? '<p>Aún no hay cambios.</p>' : `<ol class="lf-hist">${hist.map(h => `<li class="${h.undone ? 'undone' : ''} k-${h.kind}"><time>${hhmmss(h.updated || h.at)}</time><span>${esc(h.txt)}${h.by ? ` <small>· ${esc(h.by)}</small>` : ''}</span>
+        ${mine() && first && h.id === first.id && !st.done ? `<button data-undo="${h.id}">Deshacer</button>` : ''}</li>`).join('')}</ol>`}
+      <button class="jbtn big" data-close-hist>Cerrar</button></div></div>`;
+  }
   function endView() {
     const alive = st.players.filter(p => !p.out);
     if (st.done) {
@@ -168,14 +181,14 @@
     const top = st.players.slice(0, topN), bot = st.players.slice(topN);
     root.innerHTML = `<div class="lf n${n} ${st.sudden ? 'is-sudden' : ''}">
       <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
-        <i class="lf-live" title="En directo"></i>${mine() && !st.done && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button></div>
+        <i class="lf-live" title="En directo"></i><button data-hist>Historial</button>${mine() && !st.done && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button></div>
       ${menu ? `<div class="lf-menu"><button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${mine() && !st.done ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         <button data-whoami>Cambiar quién soy</button></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map((p, i) => panel(p, i, true)).join('')}</div>` : ''}<div class="lf-r">${bot.map((p, i) => panel(p, i + topN, false)).join('')}</div></div>
-      ${endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}</div>`;
+      ${endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}</div>`;
     bind();
   }
   function bind() {
@@ -199,6 +212,9 @@
     on('[data-close]', () => { sheet = null; render(); });
     on('[data-art]', b => { artSheet = Number(b.dataset.art); render(); loadArts(artSheet); });
     on('[data-close-art]', () => { artSheet = null; render(); });
+    on('[data-hist]', () => { hist = []; render(); loadHist(); });
+    on('[data-close-hist]', () => { hist = null; render(); });
+    on('[data-undo]', b => act({ op: 'undo', id: b.dataset.undo }).then(loadHist));
     on('[data-pick-art]', b => { const p = st.players.find(x => x.id === artSheet); const url = b.dataset.pickArt;
       act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => bindHold(b, () => {

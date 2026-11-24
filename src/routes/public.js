@@ -695,6 +695,11 @@ r.get('/commander/:id/vidas/:pod/artes.json', async (req, res) => {
     res.set('Cache-Control', 'no-store').json({ version: v.version, arts: out });
   } catch (e) { res.status(400).json({ error: e.message }); }
 });
+// Historial de la mesa (cada cambio de vidas, veneno y comandante, eliminaciones…)
+r.get('/commander/:id/vidas/:pod/historial.json', (req, res) => {
+  try { res.set('Cache-Control', 'no-store').json({ items: L.history(Number(req.params.id), Number(req.params.pod)) }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+});
 // Cambios al momento (sin esperar al refresco)
 r.get('/commander/:id/vidas/:pod/stream', (req, res) => {
   const pod = Number(req.params.pod);

@@ -1551,3 +1551,12 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-end.sudden { flex-direction: row; justify-content: center; gap: 12px; padding: 6px 12px; } .lf-end.sudden span { font-size: 13px; } .lf-end.sudden b { font-size: 13px; display: inline; } .lf-end.sudden .link { min-height: 28px; font-size: 13px; }
 .lf.is-sudden .lf-in footer:empty { display: none; }
 .lf.is-sudden .lf-in { grid-template-rows: auto minmax(0, 1fr); }
+/* Contador: historial */
+.lf-hist { list-style: none; margin: 8px 0; padding: 0; max-height: 55vh; overflow: auto; border: 1px solid #eee; border-radius: 12px; }
+.lf-hist li { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; padding: 8px 10px; border-bottom: 1px solid #f0f0f0; font-size: 14px; }
+.lf-hist li:last-child { border-bottom: 0; } .lf-hist time { font-variant-numeric: tabular-nums; color: #888; font-size: 12px; }
+.lf-hist li small { color: #888; } .lf-hist li.undone span { text-decoration: line-through; color: #999; }
+.lf-hist li.k-kill, .lf-hist li.k-finish { background: #fff4e5; font-weight: 600; } .lf-hist li.k-undo, .lf-hist li.k-reset { color: #666; font-style: italic; }
+.lf-hist button { border: 1px solid #ddd; background: #f4f4f4; border-radius: 99px; padding: 6px 12px; font: 600 13px var(--font); cursor: pointer; }
+.lf-sh-in { max-height: 92%; } .lf-hist { max-height: none; }
+.lf-sh-in h2 { text-transform: none; letter-spacing: 0; }
