@@ -681,6 +681,23 @@ r.get('/commander/:id/vidas', (req, res) => {
     <script>window.__LSNAP = ${json({ id: ev.id, name: ev.name, status: ev.status, round: snap.round, pods: snap.pods.map(p => ({ id: p.id, table: p.table, reported: p.reported, players: p.players.map(x => ({ id: x.id, name: x.name, deck: x.deck, seat: x.seat })) })), roster: snap.roster.map(x => ({ id: x.id, name: x.name, username: x.username, pkey: x.pkey })), pod: Number(req.query.mesa) || null })};</script>
     <script src="/static/ui.js"></script><script src="/static/life.js"></script></body></html>`));
 });
+// Contador de vidas casual: sin torneo ni resultados, todo se guarda en el propio aparato
+r.get('/vidas', (req, res) => {
+  res.send(String(html`${head('Contador de vidas', settings(), raw('<meta name="theme-color" content="#0d0d0d"><link rel="manifest" href="vidas.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black"><meta name="apple-mobile-web-app-title" content="Vidas">'))}<body class="lifep">
+    <div id="life"></div>
+    <script>window.__LSNAP = ${json({ casual: true })};</script>
+    <script src="/static/ui.js"></script><script src="/static/life.js"></script></body></html>`));
+});
+r.get('/vidas.webmanifest', (req, res) => {
+  res.type('application/manifest+json').send(JSON.stringify({ name: 'Contador de vidas', short_name: 'Vidas', start_url: 'vidas', scope: './', display: 'fullscreen', orientation: 'landscape', background_color: '#0d0d0d', theme_color: '#0d0d0d',
+    icons: [{ src: 'static/img/icon-192.png', sizes: '192x192', type: 'image/png' }, { src: 'static/img/icon-512.png', sizes: '512x512', type: 'image/png' }] }));
+});
+r.get('/vidas/artes.json', async (req, res) => {
+  if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiadas peticiones' });
+  const q = String(req.query.q || '').slice(0, 120).trim();
+  try { const all = q ? await L.arts(q, { fuzzy: true }) : []; res.set('Cache-Control', 'no-store').json({ name: L.artName(q, true), all }); }
+  catch (e) { res.json({ name: q, all: [] }); }
+});
 // Para instalar el contador como app (pantalla completa, sin barra del navegador). Rutas relativas: valen con BASE_PATH
 r.get('/commander/:id/vidas.webmanifest', (req, res) => {
   const ev = C.getEvent(Number(req.params.id));

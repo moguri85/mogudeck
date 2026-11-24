@@ -1596,3 +1596,23 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 @keyframes lfslow { to { background: #e11d48; } }
 @media (prefers-reduced-motion: reduce) { .lf-tt.slow { animation: none; } }
 .tv-toast.slow { bottom: 16vh; border-color: #e11d48; } .tv-toast.slow b { color: #ff6b81; }
+/* Contador casual: preparar la partida */
+.lf-setup { height: 100dvh; overflow: auto; box-sizing: border-box; -webkit-user-select: text; user-select: text; }
+.lf-setup form { display: grid; gap: 14px; margin-top: 14px; }
+.lf-seg { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.lf-seg legend { float: left; width: 84px; color: #bbb; font: 600 14px var(--font); padding: 0; }
+.lf-seg label { position: relative; } .lf-seg input { position: absolute; opacity: 0; inset: 0; margin: 0; cursor: pointer; }
+.lf-seg b { display: grid; place-items: center; min-width: 48px; min-height: 44px; border-radius: 12px; background: #1f1f1f; border: 1px solid #333; font: 700 17px var(--font); }
+.lf-seg input:checked + b { background: #f47700; border-color: #f47700; color: #000; }
+.lf-seg input:focus-visible + b { outline: 2px solid #fff; outline-offset: 2px; }
+.lf-names { display: grid; gap: 8px; } .lf-name { display: grid; grid-template-columns: 1fr 1.4fr; gap: 6px; } .lf-name[hidden] { display: none; }
+.lf-setup input[type=text], .lf-setup .lf-name input, .lf-cmdr input { min-height: 44px; border-radius: 10px; border: 1px solid #333; background: #161616; color: #fff; padding: 0 12px; font: 400 16px var(--font); min-width: 0; -webkit-user-select: text; user-select: text; }
+.lf-cmdr input { background: #fff; color: #111; border-color: #ddd; flex: 1; }
+.lf-cmdr { display: flex; gap: 8px; margin: 6px 0 10px; } .lf-cmdr button { min-height: 44px; border-radius: 10px; border: 0; background: #f47700; color: #000; font: 700 15px var(--font); padding: 0 16px; }
+.lf-chk { display: flex; gap: 10px; align-items: flex-start; color: #ccc; font-size: 14px; } .lf-chk input { width: 20px; height: 20px; margin: 0; accent-color: #f47700; flex: none; }
+.lf-endb { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.lf-setup .lf-chk { display: grid; grid-template-columns: 20px 1fr; gap: 10px; align-items: start; font-weight: 400; }
+.lf-setup .jbtn { width: 100%; min-height: 52px; border: 0; border-radius: 12px; background: #f47700; color: #000 !important; font: 700 17px var(--font); cursor: pointer; }
+.lf-name { grid-template-columns: 1fr 1.3fr; }
+.lf-out { min-height: 0; overflow: hidden; gap: 2px; }
+@container (max-height: 200px) { .lf-out span { display: none; } }

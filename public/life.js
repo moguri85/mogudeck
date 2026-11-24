@@ -30,9 +30,15 @@
     const saved = store.get('mt_me_user');
     return saved ? S.roster.find(p => norm(p.username) === norm(saved) || norm(p.name) === norm(saved)) || null : null;
   }
-  me = resolveMe();
-  pod = S.pods.find(p => p.id === S.pod) || (me && S.pods.find(p => p.players.some(x => x.id === me.id))) || null;
-  const mine = () => !!(me && pod && pod.players.some(x => x.id === me.id));
+  // Modo casual: partida suelta, sin torneo ni resultados; todo vive en este aparato
+  const CAS = !!S.casual;
+  if (CAS) { me = { id: 0 }; pod = { id: 'casual', table: 0, players: [] }; }
+  else {
+    me = resolveMe();
+    pod = S.pods.find(p => p.id === S.pod) || (me && S.pods.find(p => p.players.some(x => x.id === me.id))) || null;
+  }
+  const mine = () => CAS || !!(me && pod && pod.players.some(x => x.id === me.id));
+  const home = CAS ? `${B}/` : `${B}/commander/${id}`;
   const nm = pid => esc(((st && st.players.find(p => p.id === pid)) || {}).name || '—');
   const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
   const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
@@ -49,6 +55,7 @@
   }
   function take(j) { if (j && j.state && j.version >= ver) { st = j.state; ver = j.version; info = j; if (j.now) skew = j.now - Date.now(); } }
   async function act(body, optimistic) {
+    if (CAS) return casualAct(body, optimistic);
     if (!mine()) { err = 'Para anotar, di quién eres (arriba).'; render(); return; }
     if (optimistic) { optimistic(); render(); }
     busy++;
@@ -56,6 +63,11 @@
     busy--; render();
   }
   async function load(force) {
+    if (CAS) {
+      try { st = JSON.parse(store.get('mt_life_casual') || 'null'); } catch (e) { st = null; }
+      info = { comboLap: (st && st.combo) || 0, turnWarn: 0 };
+      render(); return;
+    }
     if (!pod) return;
     try {
       const r = await fetch(`${B}/commander/${id}/vidas/${pod.id}.json`, { cache: 'no-store' });
@@ -66,10 +78,123 @@
     } catch (e) { /* sin conexión: se reintenta */ }
   }
   async function loadArts(pid) {
+    if (CAS) {
+      if (!st) return;
+      for (const p of pid ? st.players.filter(x => x.id === pid) : st.players) {
+        if (!p.deck) continue;
+        try { const j = await (await fetch(`${B}/vidas/artes.json?q=${encodeURIComponent(p.deck)}`)).json(); arts[p.id] = { name: j.name || p.deck, def: j.all && j.all[0] ? j.all[0].url : null, all: j.all || [] }; } catch (e) { /* sin fondos */ }
+      }
+      render(); return;
+    }
     try {
       const j = await (await fetch(`${B}/commander/${id}/vidas/${pod.id}/artes.json${pid ? `?pid=${pid}` : ''}`, { cache: 'no-store' })).json();
       if (j.arts) { for (const k of Object.keys(j.arts)) arts[k] = { ...(arts[k] || {}), ...j.arts[k] }; render(); }
     } catch (e) { /* sin fondos */ }
+  }
+
+  // ---- Motor local del modo casual (mismas acciones que el servidor, guardadas en este aparato) ----
+  const saveCas = () => store.set('mt_life_casual', st ? JSON.stringify(st) : null);
+  const nameOf = pid => ((st.players.find(p => p.id === Number(pid))) || {}).name || '—';
+  const tTag = () => (st.turn ? `Vuelta ${st.turn.lap || 1} · turno de ${nameOf(st.turn.pid)}` : '');
+  function hpush(e) {
+    st.hist = st.hist || [];
+    const now = Date.now();
+    st.hist.unshift({ at: now, updated: now, by: '', turn: '', canUndo: false, undone: false, ...e, id: (st.hseq = (st.hseq || 0) + 1) });
+    st.hist = st.hist.slice(0, 400);
+  }
+  function htxt(h) {
+    const sg = n => (n > 0 ? `+${n}` : `−${-n}`), n = nameOf(h.pid);
+    if (h.kind === 'life') return `${n}: ${sg(h.d)} ${Math.abs(h.d) === 1 ? 'vida' : 'vidas'} (${h.before} → ${h.after})`;
+    if (h.kind === 'poison') return `${n}: ${sg(h.d)} veneno (${h.before} → ${h.after})`;
+    return `${n}: ${sg(h.d)} de comandante de ${nameOf(h.from)} (${h.before} → ${h.after})`;
+  }
+  function track(kind, p, from, d, after) {
+    if (!d) return;
+    const h = st.hist && st.hist[0], now = Date.now();
+    if (h && h.kind === kind && h.pid === p.id && (h.from || 0) === (from || 0) && !h.undone && now - h.updated < 4000) {
+      h.d += d; h.after = after; h.updated = now;
+      if (!h.d) st.hist.shift(); else h.txt = htxt(h);
+      return;
+    }
+    const e = { kind, pid: p.id, from: from || 0, d, before: after - d, after, canUndo: true, turn: tTag() };
+    e.txt = htxt(e); hpush(e);
+  }
+  function casualOp(b, prev) {
+    const P = x => st.players.find(q => q.id === Number(x));
+    const rd = b.rd != null ? Number(b.rd) : Number(b.d);
+    switch (b.op) {
+      case 'life': track('life', P(b.pid), 0, rd, P(b.pid).life); break;
+      case 'poison': track('poison', P(b.pid), 0, rd, P(b.pid).poison); break;
+      case 'cmd': track('cmd', P(b.pid), Number(b.from), rd, P(b.pid).cmd[b.from] || 0); break;
+      case 'undo': {
+        const h = (st.hist || []).find(x => x.canUndo);
+        if (!h) break;
+        const p = P(h.pid);
+        if (h.kind === 'life') p.life -= h.d;
+        else if (h.kind === 'poison') p.poison -= h.d;
+        else { p.cmd[h.from] = (p.cmd[h.from] || 0) - h.d; p.life += h.d; }
+        h.canUndo = false; h.undone = true;
+        hpush({ kind: 'undo', txt: `Deshecho: ${h.txt}` });
+        break;
+      }
+      case 'kill': { const v = P(b.pid); hpush({ kind: 'kill', pid: v.id, turn: tTag(), txt: b.killer ? `${nameOf(b.killer)} elimina a ${v.name}` : `${v.name} se rinde` }); break; }
+      case 'revive': {
+        const p = P(b.pid); if (!p.out) break;
+        p.out = false; p.killer = null; p.how = null; p.ord = null; if (p.life <= 0) p.life = 1;
+        st.players.filter(q => q.out).sort((x, y) => x.ord - y.ord).forEach((q, i) => { q.ord = i + 1; });
+        hpush({ kind: 'note', txt: `${p.name} vuelve a la partida` });
+        break;
+      }
+      case 'reset':
+        st.players.forEach(p => Object.assign(p, { life: st.start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null }));
+        Object.assign(st, { turn: null, tstats: {}, sudden: false, hist: [], log: [] });
+        dismissed.clear();
+        hpush({ kind: 'reset', txt: 'Partida nueva con los mismos jugadores' });
+        break;
+      case 'sudden': hpush({ kind: 'note', txt: st.sudden ? 'Muerte súbita activada' : 'Muerte súbita quitada' }); break;
+      case 'turn': {
+        let txt = '';
+        if (prev && !b.pid) {
+          const ms = Date.now() - prev.at;
+          st.tstats = st.tstats || {};
+          const t = st.tstats[prev.pid] = st.tstats[prev.pid] || { n: 0, ms: 0, max: 0 };
+          t.n++; t.ms += ms; t.max = Math.max(t.max, ms);
+          txt = ` (${nameOf(prev.pid)} tardó ${mmss(ms)})`;
+        }
+        hpush({ kind: 'turn', txt: `Vuelta ${st.turn.lap || 1}: turno de ${nameOf(st.turn.pid)}${txt}` });
+        break;
+      }
+      case 'lap': hpush({ kind: 'note', txt: `Vuelta corregida: ${st.turn.lap}` }); break;
+      case 'turnoff': hpush({ kind: 'note', txt: 'Sin turnos' }); break;
+      default: break;
+    }
+  }
+  function casualAct(body, optimistic) {
+    const prev = st.turn ? { ...st.turn } : null;
+    if (optimistic) optimistic();
+    casualOp(body, prev);
+    saveCas();
+    if (hist) hist = (st.hist || []).slice();
+    render();
+    return Promise.resolve();
+  }
+  function setupCfg() {
+    let c = {}; try { c = JSON.parse(store.get('mt_life_casual_cfg') || '{}') || {}; } catch (e) { c = {}; }
+    return { n: c.n || 4, start: c.start || 40, names: c.names || [], cmds: c.cmds || [], combo: !!c.combo };
+  }
+  function setupView() {
+    const c = setupCfg();
+    return `<div class="lf-pick lf-setup"><h1>Contador de vidas</h1>
+      <p>Para partidas sueltas: no cuenta para ningún torneo y se guarda solo en este aparato.</p>
+      <form data-setup>
+        <fieldset class="lf-seg"><legend>Jugadores</legend>${[2, 3, 4, 5, 6].map(n => `<label><input type="radio" name="n" value="${n}" ${c.n === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
+        <fieldset class="lf-seg"><legend>Vidas</legend>${[20, 30, 40].map(n => `<label><input type="radio" name="start" value="${n}" ${c.start === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
+        <div class="lf-names">${[0, 1, 2, 3, 4, 5].map(i => `<div class="lf-name" data-i="${i}" ${i >= c.n ? 'hidden' : ''}>
+          <input name="p${i}" value="${esc(c.names[i] || '')}" placeholder="Jugador ${i + 1}" maxlength="24" aria-label="Nombre del jugador ${i + 1}">
+          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante (opcional)" maxlength="80" aria-label="Comandante del jugador ${i + 1}"></div>`).join('')}</div>
+        <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de que los combos de 2 cartas no valen antes de la vuelta 6</span></label>
+        <button class="jbtn big">Empezar partida</button>
+      </form><a class="lf-back" href="${B}/">← Volver</a></div>`;
   }
 
   // Toques: un toque es ±1; si mantienes pulsado, ±5 y repite mientras sigas pulsando
@@ -152,7 +277,7 @@
     const bub = bubbles[p.id];
     const others = st.players.filter(x => x.id !== p.id);
     const art = artOf(p);
-    const own = mine() && me.id === p.id;
+    const own = CAS || (mine() && me.id === p.id);
     const myTurn = turnOn() && st.turn.pid === p.id && !p.out;
     const pass = myTurn && mine() && !isDead ? '<button class="lf-pass" data-pass>Pasar turno</button>' : '';
     return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
@@ -183,8 +308,9 @@
     const p = st.players.find(x => x.id === artSheet);
     const a = arts[artSheet] || {};
     const cur = artOf(p);
-    return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>Tu fondo</h2>
-      ${!a.name ? '<p>Primero di cuál es tu comandante en la página del torneo («Tu mazo y comandante»).</p>'
+    return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>${CAS ? `Fondo de ${esc(p.name)}` : 'Tu fondo'}</h2>
+      ${CAS ? `<form class="lf-cmdr" data-cmdr="${p.id}"><input name="c" value="${esc(p.deck || '')}" placeholder="Nombre del comandante" maxlength="80" aria-label="Comandante"><button>Buscar</button></form>` : ''}
+      ${!a.name ? (CAS ? '<p class="small">Escribe el comandante para ver sus ilustraciones.</p>' : '<p>Primero di cuál es tu comandante en la página del torneo («Tu mazo y comandante»).</p>')
       : !a.all ? '<p>Buscando ilustraciones…</p>'
       : !a.all.length ? `<p>No encuentro ilustraciones de «${esc(a.name)}».</p>`
       : `<p class="small">Ilustraciones de <b>${esc(a.name)}</b>. Todos los de la mesa verán la que elijas.</p>
@@ -209,6 +335,7 @@
   }
   const hhmmss = t => new Date(t).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
   async function loadHist() {
+    if (CAS) { hist = (st.hist || []).slice(); render(); return; }
     try { const j = await (await fetch(`${B}/commander/${id}/vidas/${pod.id}/historial.json`, { cache: 'no-store' })).json(); hist = j.items || []; } catch (e) { hist = hist || []; }
     render();
   }
@@ -228,8 +355,9 @@
         <a href="${B}/commander/${id}">Volver al torneo</a></div>`;
     }
     if (alive.length === 1 && !st.players.some(p => dead(p) && !dismissed.has(p.id))) {
-      return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana la mesa!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
-        ${mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
+      return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana ${CAS ? 'la partida' : 'la mesa'}!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
+        ${CAS ? '<div class="lf-endb"><button class="jbtn big" data-rematch>Revancha</button><button class="jbtn big ghost" data-new>Cambiar jugadores</button></div>'
+        : mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
     }
     if (st.sudden) {
       return `<div class="lf-end sudden"><span><b>Muerte súbita:</b> el primer daño de un rival elimina. Pagar vidas o dañarte a ti mismo no mata.</span>${mine() ? '<button class="link" data-sudden="0">Quitar</button>' : ''}</div>`;
@@ -240,7 +368,7 @@
   // Apaisado: si el móvil está en vertical, se gira todo 90º (se juega con el móvil de lado en el centro de la mesa)
   function sizeVars() {
     const w = window.innerWidth, h = window.innerHeight;
-    const turn = turnPref && h > w;
+    const turn = turnPref && h > w && !!st; // la pantalla de preparar la partida no se gira
     root.style.setProperty('--vw', (turn ? h : w) + 'px');
     root.style.setProperty('--vh', (turn ? w : h) + 'px');
     root.classList.toggle('turn', turn);
@@ -251,6 +379,7 @@
   function render() {
     sizeVars();
     if (!pod) { root.innerHTML = pickPodView(); return; }
+    if (!st && CAS) { root.innerHTML = setupView(); bindSetup(); return; }
     if (!st) { root.innerHTML = `<div class="lf-pick"><p>Cargando la mesa ${pod.table}…</p>${err ? `<p class="lf-note">${esc(err)}</p>` : ''}<a class="lf-back" href="${B}/commander/${id}">← Volver al torneo</a></div>`; return; }
     const n = st.players.length;
     const topN = rot && n >= 3 ? Math.floor(n / 2) : 0;
@@ -259,14 +388,14 @@
     const rotd = (p, def) => (p.id in lay.rot ? lay.rot[p.id] : def);
     const canPlay = mine() && !st.done && !arrange;
     root.innerHTML = `<div class="lf n${n} ${st.sudden ? 'is-sudden' : ''} ${arrange ? 'is-arr' : ''}">
-      <div class="lf-bar"><a href="${B}/commander/${id}" aria-label="Volver al torneo">←</a><span>Mesa ${pod.table}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
+      <div class="lf-bar"><a href="${home}" aria-label="Volver">←</a><span>${CAS ? 'Partida casual' : `Mesa ${pod.table}`}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
       ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button><button data-full>Pantalla completa</button><button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
-        ${mine() && !st.done ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
-        ${installEv ? '<button data-install>Instalar como app</button>' : ''}<button data-whoami>Cambiar quién soy</button>
+        ${CAS && !st.sudden ? '<button data-sudden="1">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
+        ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? '<button data-new>Cambiar jugadores</button>' : '<button data-whoami>Cambiar quién soy</button>'}
         <p class="small">Para que la pantalla no se apague, mejor instálalo: menú del navegador › «Añadir a pantalla de inicio».</p></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
@@ -274,6 +403,21 @@
       <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${bot.map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
       ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}</div>`;
     bind();
+  }
+  function bindSetup() {
+    const f = root.querySelector('[data-setup]');
+    f.querySelectorAll('input[name=n]').forEach(r => { r.onchange = () => f.querySelectorAll('.lf-name').forEach(d => { d.hidden = Number(d.dataset.i) >= Number(r.value); }); });
+    f.onsubmit = e => {
+      e.preventDefault();
+      const fd = new FormData(f), n = Number(fd.get('n')) || 4, start = Number(fd.get('start')) || 40;
+      const names = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('p' + i) || '').trim()), cmds = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('c' + i) || '').trim());
+      store.set('mt_life_casual_cfg', JSON.stringify({ n, start, names, cmds, combo: !!fd.get('combo') }));
+      st = { casual: true, start, combo: fd.get('combo') ? 6 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
+        players: Array.from({ length: n }, (_, i) => ({ id: i + 1, seat: i + 1, name: names[i] || `Jugador ${i + 1}`, deck: cmds[i], life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })) };
+      info = { comboLap: st.combo, turnWarn: 0 };
+      lay = { order: [], rot: {} }; saveLay(); arts = {}; dismissed.clear();
+      saveCas(); render(); loadArts();
+    };
   }
   function bind() {
     root.querySelectorAll('[data-z]').forEach(b => bindStep(b, k => bump(Number(b.dataset.z), Number(b.dataset.d) * k)));
@@ -288,10 +432,13 @@
       render();
     });
     on('[data-whoami]', () => { me = null; store.set('mt_me_user', null); menu = false; render(); });
-    on('[data-reset]', () => { if (confirm('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
+    on('[data-reset]', () => { if (confirm(CAS ? `¿Reiniciar la partida? Todos vuelven a ${st.start} vidas, mismos jugadores.` : '¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.')) { menu = false; act({ op: 'reset' }); } });
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
     on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; if (on && !confirm('¿Pasar a muerte súbita? El primer daño de un rival elimina.')) return; menu = false; act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; }); });
     on('[data-finish]', () => act({ op: 'finish' }));
+    on('[data-rematch]', () => act({ op: 'reset' }));
+    on('[data-new]', () => { if (!confirm('¿Empezar otra partida con otros jugadores? Se borra la actual.')) return; menu = false; st = null; hist = null; saveCas(); render(); });
+    root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = e => { e.preventDefault(); const p = st.players.find(x => x.id === Number(f.dataset.cmdr)); p.deck = f.c.value.trim(); p.art = null; p.artOff = false; saveCas(); arts[p.id] = p.deck ? { name: p.deck } : {}; render(); loadArts(p.id); }; });
     on('[data-sheet]', b => { sheet = Number(b.dataset.sheet); render(); });
     on('[data-close]', () => { sheet = null; render(); });
     on('[data-art]', b => { artSheet = Number(b.dataset.art); render(); loadArts(artSheet); });
@@ -303,8 +450,8 @@
       act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => bindHold(b, () => {
       const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
-      if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d }); }
-      else { p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d }); }
+      if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d, rd: nv - cur }); }
+      else { const o = p.poison; p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d, rd: p.poison - o }); }
       if (navigator.vibrate) navigator.vibrate(6);
     }));
     on('[data-kill]', b => { const pid = Number(b.dataset.kill), by = b.dataset.by; const p = st.players.find(x => x.id === pid);
@@ -388,7 +535,8 @@
   if (pod) loadLay();
   wake();
   render();
-  if (pod) {
+  if (CAS) { load(true); loadArts(); }
+  else if (pod) {
     load(true).then(() => loadArts());
     live();
     setInterval(() => { if (!es || es.readyState !== 1) load(false); }, 2000);

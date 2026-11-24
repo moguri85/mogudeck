@@ -275,27 +275,42 @@ function finish(eventId, podId, byId, winnerId) {
 const API = (process.env.SCRYFALL_URL || 'https://api.scryfall.com').replace(/\/$/, '');
 const artCache = new Map();
 const cmdName = deck => String(deck || '').split(/\s+\+\s+|\s*\/\/\s*/)[0].trim();
-async function arts(deck) {
-  const name = cmdName(deck);
-  if (!name) return [];
-  const k = name.toLowerCase();
-  const c = artCache.get(k);
-  if (c && Date.now() - c.at < 24 * 3600e3) return c.list;
-  let list = [];
-  try {
-    const q = encodeURIComponent(`!"${name}"`);
-    const r = await fetch(`${API}/cards/search?q=${q}&unique=art&order=released&dir=desc&include_extras=true`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
-    if (r.ok) {
-      const j = await r.json();
-      list = (j.data || []).map(x => {
-        const iu = x.image_uris || (x.card_faces && x.card_faces[0] && x.card_faces[0].image_uris) || {};
-        return iu.art_crop ? { url: iu.art_crop, set: x.set_name || x.set, artist: x.artist || '' } : null;
-      }).filter(Boolean).slice(0, 30);
-    }
-  } catch (e) { /* sin red: sin fondo */ }
-  artCache.set(k, { at: Date.now(), list });
-  return list;
+async function artSearch(name) {
+  const q = encodeURIComponent(`!"${name}"`);
+  const r = await fetch(`${API}/cards/search?q=${q}&unique=art&order=released&dir=desc&include_extras=true`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+  if (!r.ok) return { ok: r.status === 404, list: [] };
+  const j = await r.json();
+  return { ok: true, list: (j.data || []).map(x => {
+    const iu = x.image_uris || (x.card_faces && x.card_faces[0] && x.card_faces[0].image_uris) || {};
+    return iu.art_crop ? { url: iu.art_crop, set: x.set_name || x.set, artist: x.artist || '' } : null;
+  }).filter(Boolean).slice(0, 30) };
 }
+// fuzzy: para el contador casual, donde el nombre se escribe a mano («atraxa» → «Atraxa, Praetors' Voice»)
+async function arts(deck, { fuzzy = false } = {}) {
+  let name = cmdName(deck);
+  if (!name) return [];
+  const k = (fuzzy ? '~' : '') + name.toLowerCase();
+  const c = artCache.get(k);
+  if (c && Date.now() - c.at < (c.list.length || c.ok ? 24 * 3600e3 : 10 * 60e3)) return c.list;
+  let res = { ok: false, list: [] };
+  try {
+    res = await artSearch(name);
+    if (!res.list.length && fuzzy) {
+      const r = await fetch(`${API}/cards/named?fuzzy=${encodeURIComponent(name)}`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+      let full = null;
+      if (r.ok) full = (await r.json()).name;
+      else { // nombre ambiguo («atraxa»): el comandante más jugado que lo contenga
+        const r2 = await fetch(`${API}/cards/search?q=${encodeURIComponent(`name:"${name}" is:commander`)}&order=edhrec`, { headers: { 'User-Agent': 'JupiterTorneos/1.0', Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+        if (r2.ok) { const j = await r2.json(); full = j.data && j.data[0] && j.data[0].name; }
+      }
+      if (full && full !== name) { name = full; res = await artSearch(name); }
+    }
+  } catch (e) { /* sin red: sin fondo, se reintenta en unos minutos */ }
+  if (artCache.size > 800) artCache.delete(artCache.keys().next().value);
+  artCache.set(k, { at: Date.now(), list: res.list, ok: res.ok, name });
+  return res.list;
+}
+const artName = (deck, fuzzy) => { const c = artCache.get((fuzzy ? '~' : '') + (cmdName(deck) || '').toLowerCase()); return (c && c.name) || cmdName(deck); };
 
 // Resumen de vidas por mesa (para la TV y la página del torneo)
 function summary(podIds) {
@@ -334,4 +349,4 @@ function turnStats(eventId) {
 }
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { artName, mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
