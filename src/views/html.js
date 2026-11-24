@@ -95,7 +95,7 @@ function head(title, s, extra = '') {
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600&family=Roboto+Flex:opsz,wght@8..144,300..800&display=swap">
 <link rel="stylesheet" href="/static/style.css">
-<link rel="icon" type="image/png" sizes="32x32" href="/static/img/icon-32.png"><link rel="apple-touch-icon" href="/static/img/icon-180.png"><meta name="theme-color" content="#121212">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/img/icon-32.png"><link rel="apple-touch-icon" href="/static/img/icon-180.png"><link rel="manifest" href="/static/manifest.webmanifest"><meta name="theme-color" content="#121212">
 <style>:root{--accent:${s.accent && s.accent !== '#e4572e' ? s.accent : '#f47700'}}</style><script>window.__BASE=${json(config.basePath)};window.__ME=${json((() => { const a = require('../reqctx').get().account; return a ? { key: a.person, name: a.name } : null; })())}</script>${extra}</head>`;
 }
 
