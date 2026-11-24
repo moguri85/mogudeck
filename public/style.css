@@ -1616,3 +1616,5 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-name { grid-template-columns: 1fr 1.3fr; }
 .lf-out { min-height: 0; overflow: hidden; gap: 2px; }
 @container (max-height: 200px) { .lf-out span { display: none; } }
+.lf-seg { flex-wrap: nowrap; } .lf-seg legend { float: none; width: auto; margin-bottom: 6px; }
+.lf-seg label { flex: 1 1 0; min-width: 0; } .lf-seg b { min-width: 0; width: 100%; box-sizing: border-box; }

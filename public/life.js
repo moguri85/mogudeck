@@ -191,7 +191,7 @@
         <fieldset class="lf-seg"><legend>Vidas</legend>${[20, 30, 40].map(n => `<label><input type="radio" name="start" value="${n}" ${c.start === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
         <div class="lf-names">${[0, 1, 2, 3, 4, 5].map(i => `<div class="lf-name" data-i="${i}" ${i >= c.n ? 'hidden' : ''}>
           <input name="p${i}" value="${esc(c.names[i] || '')}" placeholder="Jugador ${i + 1}" maxlength="24" aria-label="Nombre del jugador ${i + 1}">
-          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante (opcional)" maxlength="80" aria-label="Comandante del jugador ${i + 1}"></div>`).join('')}</div>
+          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="80" aria-label="Comandante del jugador ${i + 1}"></div>`).join('')}</div>
         <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de que los combos de 2 cartas no valen antes de la vuelta 6</span></label>
         <button class="jbtn big">Empezar partida</button>
       </form><a class="lf-back" href="${B}/">← Volver</a></div>`;
