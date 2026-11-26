@@ -410,7 +410,8 @@ function pairNextRound(eventId) {
   // Ronda 1 al azar; después por clasificación
   const ordered = ev.three_pods === 'top' ? [...sizes].reverse() : sizes;
   const pairs = history(eventId);
-  const ctx = { prior: ev.avoid_regulars ?? 1 ? priorPairs(eventId, active) : null, bracket: !!(ev.balance_bracket ?? 1) };
+  // Solo en la ronda 1: después, lo más suizo posible (por puntos y sin repetir rival del torneo)
+  const ctx = roundNo === 1 ? { prior: ev.avoid_regulars ?? 1 ? priorPairs(eventId, active) : null, bracket: !!(ev.balance_bracket ?? 1) } : null;
   // Varios intentos (orden de clasificación y variantes barajando empatados a puntos); se queda el de menor coste
   let best = null;
   for (let attempt = 0; attempt < 40; attempt++) {

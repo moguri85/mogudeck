@@ -121,8 +121,8 @@ function eventForm(ev, action) {
     <label class="check-inline"><input type="checkbox" name="public" value="1" ${ev.public ?? 1 ? 'checked' : ''}> Visible en la web pública y la TV</label>
     <label class="check-inline"><input type="checkbox" name="self_report" value="1" ${ev.self_report ?? 1 ? 'checked' : ''}> Los jugadores pueden reportar el resultado desde el móvil (la tienda lo confirma)</label>
     <fieldset class="full"><legend>Emparejamientos</legend>
-      <label class="check-inline"><input type="checkbox" name="avoid_regulars" value="1" ${ev.avoid_regulars ?? 1 ? 'checked' : ''}> Evitar juntar a los que ya coincidieron en torneos anteriores (si hay alternativa con los mismos puntos)</label>
-      <label class="check-inline"><input type="checkbox" name="balance_bracket" value="1" ${ev.balance_bracket ?? 1 ? 'checked' : ''}> Equilibrar las mesas por bracket del mazo (con los mazos analizados)</label>
+      <label class="check-inline"><input type="checkbox" name="avoid_regulars" value="1" ${ev.avoid_regulars ?? 1 ? 'checked' : ''}> Ronda 1: evitar juntar a los que ya coincidieron en torneos anteriores</label>
+      <label class="check-inline"><input type="checkbox" name="balance_bracket" value="1" ${ev.balance_bracket ?? 1 ? 'checked' : ''}> Ronda 1: equilibrar las mesas por bracket del mazo (con los mazos analizados). Las demás rondas son suizo puro</label>
     </fieldset>
     <fieldset class="full"><legend>Contador de vidas</legend>
       <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
