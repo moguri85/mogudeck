@@ -130,7 +130,10 @@ function eventForm(ev, action) {
       <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
       <label>Turnos extra al acabar el tiempo<select name="extra_turns">${[[5, '5 turnos'], [3, '3 turnos'], [4, '4 turnos'], [6, '6 turnos'], [0, 'No contar']].map(([n, t]) => html`<option value="${n}" ${(ev.extra_turns ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Avisar de un turno largo<select name="turn_warn">${[[5, 'A los 5 minutos'], [3, 'A los 3 minutos'], [4, 'A los 4 minutos'], [6, 'A los 6 minutos'], [8, 'A los 8 minutos'], [10, 'A los 10 minutos'], [0, 'No avisar']].map(([n, t]) => html`<option value="${n}" ${(ev.turn_warn ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
-      <label>Combos de 2 cartas<select name="combo_lap">${[[6, 'Prohibidos antes de la vuelta 6'], [5, 'Prohibidos antes de la vuelta 5'], [4, 'Prohibidos antes de la vuelta 4'], [7, 'Prohibidos antes de la vuelta 7'], [8, 'Prohibidos antes de la vuelta 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 6) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
+      <label>Qué combos se limitan (lo que verán en el contador)<input name="combo_label" maxlength="60" value="${ev.combo_label || 'Combos de 3 o más cartas'}"></label>
+      <label>Permitidos desde el turno<select name="combo_lap">${[[5, 'Turno 5'], [3, 'Turno 3'], [4, 'Turno 4'], [6, 'Turno 6'], [7, 'Turno 7'], [8, 'Turno 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
+      <label>…del jugador<select name="combo_seat">${[[3, '3º en jugar'], [1, '1º en jugar'], [2, '2º en jugar'], [4, '4º en jugar']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_seat || (ev.id ? 1 : 3)) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
+      <small class="muted full">Ejemplo: turno 5 del 3º jugador. En la vuelta 5, el 1º y el 2º aún no pueden y el 3º y el 4º ya sí; desde la vuelta 6, todos.</small>
     </fieldset>
     <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="4">${ev.info || ''}</textarea></label>
     <div class="full"><button class="btn">Guardar</button></div></form>
@@ -156,7 +159,8 @@ function saveLife(id, b) {
   require('../life');
   db.prepare('UPDATE cmd_events SET avoid_regulars = ?, balance_bracket = ? WHERE id = ?').run(b.avoid_regulars ? 1 : 0, b.balance_bracket ? 1 : 0, id);
   db.prepare('UPDATE cmd_events SET extra_turns = ? WHERE id = ?').run(b.extra_turns == null ? 5 : Math.min(Math.max(Number(b.extra_turns) || 0, 0), 10), id);
-  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ?, turn_warn = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 6 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), b.turn_warn == null ? 5 : Math.min(Math.max(Number(b.turn_warn) || 0, 0), 30), id);
+  db.prepare('UPDATE cmd_events SET combo_seat = ?, combo_label = ? WHERE id = ?').run(Math.min(Math.max(Number(b.combo_seat) || 1, 1), 6), String(b.combo_label || '').trim().slice(0, 60) || null, id);
+  db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ?, turn_warn = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 5 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), b.turn_warn == null ? 5 : Math.min(Math.max(Number(b.turn_warn) || 0, 0), 30), id);
 }
 const ptsN = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.min(Math.max(Math.round(Number(v)), 0), 20));
 

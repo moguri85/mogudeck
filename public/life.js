@@ -72,7 +72,7 @@
         } catch (e) { /* sin conexión: seguimos con lo que hay */ }
       }
       if (!st || force) { try { st = (room && st) || JSON.parse(store.get('mt_life_casual') || 'null'); } catch (e) { st = null; } }
-      info = { comboLap: (st && st.combo) || 0, turnWarn: 0 };
+      info = casInfo();
       if (hist && st) hist = (st.hist || []).slice();
       render(); return;
     }
@@ -242,6 +242,7 @@
     render();
     return Promise.resolve();
   }
+  const casInfo = () => ({ comboLap: (st && st.combo) || 0, comboSeat: 3, comboLabel: 'Combos de 3 o más cartas', turnWarn: 0 });
   function setupCfg() {
     let c = {}; try { c = JSON.parse(store.get('mt_life_casual_cfg') || '{}') || {}; } catch (e) { c = {}; }
     return { n: c.n || 4, start: c.start || 40, names: c.names || [], cmds: c.cmds || [], combo: !!c.combo };
@@ -257,7 +258,7 @@
           <input name="p${i}" value="${esc(c.names[i] || '')}" placeholder="Jugador ${i + 1}" maxlength="24" aria-label="Nombre del jugador ${i + 1}">
           <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="120" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Comandante del jugador ${i + 1}">
           <p class="lf-cerr" data-cerr="${i}" hidden></p></div>`).join('')}</div>
-        <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de que los combos de 2 cartas no valen antes de la vuelta 6</span></label>
+        <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de cuándo valen los combos de 3 o más cartas (desde el turno 5 del 3º jugador)</span></label>
         ${room ? `<p class="lf-note">Estás en la sala <b>${esc(room)}</b>: la partida nueva la verán todos los móviles de la sala.</p>` : `<label class="lf-chk"><input type="checkbox" name="share"><span>Compartir con otros móviles (te da un código para que cada uno lleve sus vidas en su móvil)</span></label>`}
         <button class="jbtn big">Empezar partida</button>
       </form>
@@ -313,8 +314,12 @@
   const turnOn = () => !!(st.turn && !st.done);
   const slowT = () => !!(st && st.turn && info.turnWarn && Date.now() + skew - st.turn.at >= info.turnWarn * 60000);
   // Combos de 2 cartas: prohibidos antes de la vuelta que diga el torneo (normalmente la 6)
-  const comboTag = () => { const c = info.comboLap; if (!c || !st.turn) return ''; const l = st.turn.lap || 1;
-    return l < c ? `<span class="lf-combo no">Sin combos hasta V${c}</span>` : '<span class="lf-combo ok">Combos permitidos</span>'; };
+  // Ejemplo: turno 5 del 3º jugador → en la vuelta 5 el 1º y el 2º aún no, el 3º y siguientes ya sí; desde la vuelta 6, todos
+  const comboRule = () => `${info.comboLabel || 'Combos'}: desde el turno ${info.comboLap}${(info.comboSeat || 1) > 1 ? ` del ${info.comboSeat}º jugador` : ''}`;
+  const comboTag = () => { const c = info.comboLap, k = info.comboSeat || 1; if (!c || !st.turn) return '';
+    const l = st.turn.lap || 1, pos = (st.turn.played || [st.turn.pid]).length;
+    const ok = l > c || (l === c && pos >= k);
+    return ok ? `<span class="lf-combo ok" title="${esc(comboRule())}">${esc(info.comboLabel || 'Combos')}: sí</span>` : `<span class="lf-combo no" title="${esc(comboRule())}">${esc(info.comboLabel || 'Combos')}: desde T${c}${k > 1 ? ` del ${k}º` : ''}</span>`; };
   // Reloj de la ronda del torneo (el que pone la tienda)
   function clockTxt() {
     if (!info.timerEnd) return null;
@@ -554,7 +559,7 @@
   function turnSheetView() {
     const alive = st.players.filter(p => !p.out).sort((a, b) => a.seat - b.seat);
     return `<div class="lf-sheet" role="dialog" aria-label="Turnos"><div class="lf-sh-in"><h2>${st.turn ? '¿De quién es el turno?' : '¿Quién empieza?'}</h2>
-      <p class="small">«Pasar turno» va al siguiente en el sentido de las agujas del reloj, según estéis colocados en la pantalla. La vuelta sube cuando vuelve a tocarle a quien ya ha jugado${info.comboLap ? `; los combos de 2 cartas no valen antes de la vuelta ${info.comboLap}` : ''}.</p>
+      <p class="small">«Pasar turno» va al siguiente en el sentido de las agujas del reloj, según estéis colocados en la pantalla. La vuelta sube cuando vuelve a tocarle a quien ya ha jugado${info.comboLap ? `. ${esc(comboRule())}` : ''}.</p>
       ${!st.turn ? '<button class="jbtn big lf-raf" data-raffle>Sortear quién empieza</button>' : ''}
       <div class="lf-turns">${alive.map(p => `<button data-turn-to="${p.id}" class="${st.turn && st.turn.pid === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
       ${st.turn ? `<div class="lf-row"><span>Vuelta</span><button data-lap="-1">−</button><b>${st.turn.lap || 1}</b><button data-lap="1">+</button></div>` : ''}
@@ -670,9 +675,9 @@
       btn.disabled = false; btn.textContent = 'Empezar partida';
       if (bad) return;
       store.set('mt_life_casual_cfg', JSON.stringify({ n, start, names, cmds, combo: !!fd.get('combo') }));
-      st = { casual: true, startedAt: Date.now(), start, combo: fd.get('combo') ? 6 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
+      st = { casual: true, startedAt: Date.now(), start, combo: fd.get('combo') ? 5 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
         players: Array.from({ length: n }, (_, i) => ({ id: i + 1, seat: i + 1, name: names[i] || `Jugador ${i + 1}`, deck: cmds[i], life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })) };
-      info = { comboLap: st.combo, turnWarn: 0 };
+      info = casInfo();
       lay = { order: [], rot: {} }; saveLay(); arts = {}; dismissed.clear();
       saveCas(); render(); loadArts();
       if (room) pushRoom(); else if (fd.get('share')) makeRoom();

@@ -29,6 +29,10 @@ addColumn('cmd_life_log', 'turn_pid', 'INTEGER');
 addColumn('cmd_life_log', 'turn_n', 'INTEGER');
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
 addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6');
+// Combos: permitidos desde el turno combo_lap del jugador combo_seat de la vuelta (p. ej. turno 5 del 3º jugador) y con qué nombre se enseñan
+addColumn('cmd_events', 'combo_seat', 'INTEGER');
+addColumn('cmd_events', 'combo_label', 'TEXT');
+db.prepare("UPDATE cmd_events SET combo_lap = CASE WHEN combo_lap = 6 THEN 5 ELSE combo_lap END, combo_seat = 3 WHERE combo_seat IS NULL").run();
 addColumn('cmd_events', 'turn_warn', 'INTEGER DEFAULT 5');
 addColumn('cmd_events', 'extra_turns', 'INTEGER DEFAULT 5'); // turnos extra cuando se acaba el tiempo de ronda (0 = no contar)
 // Llamadas a juez desde el contador
@@ -66,7 +70,7 @@ function load(eventId, podId, create = true) {
 }
 function view(eventId, podId) {
   const x = load(eventId, podId);
-  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6, turnWarn: x.ev.turn_warn ?? 5,
+  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 5, comboSeat: x.ev.combo_seat || 1, comboLabel: x.ev.combo_label || 'Combos de 3 o más cartas', turnWarn: x.ev.turn_warn ?? 5,
     extraTurns: x.ev.extra_turns ?? 5, judge: judgeOpen(podId) };
 }
 const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
