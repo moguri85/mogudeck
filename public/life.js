@@ -252,13 +252,15 @@
     const c = setupCfg();
     return `<div class="lf-pick lf-setup"><h1>Contador de vidas</h1>
       <p>Para partidas sueltas: no cuenta para ningún torneo y se guarda solo en este aparato.</p>
-      <form data-setup>
+      <form data-setup class="${c.cmds.some(x => /\s\+\s/.test(x || '')) ? 'pairs' : ''}">
         <fieldset class="lf-seg"><legend>Jugadores</legend>${[2, 3, 4, 5, 6].map(n => `<label><input type="radio" name="n" value="${n}" ${c.n === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
         <fieldset class="lf-seg"><legend>Vidas</legend>${[20, 30, 40].map(n => `<label><input type="radio" name="start" value="${n}" ${c.start === n ? 'checked' : ''}><b>${n}</b></label>`).join('')}</fieldset>
         <div class="lf-names">${[0, 1, 2, 3, 4, 5].map(i => `<div class="lf-name" data-i="${i}" ${i >= c.n ? 'hidden' : ''}>
           <input name="p${i}" value="${esc(c.names[i] || '')}" placeholder="Jugador ${i + 1}" maxlength="24" aria-label="Nombre del jugador ${i + 1}">
-          <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="120" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Comandante del jugador ${i + 1}">
+          <input name="c${i}" value="${esc(String(c.cmds[i] || '').split(/\s+\+\s+/)[0] || '')}" placeholder="Comandante" maxlength="80" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Comandante del jugador ${i + 1}">
+          <input name="d${i}" class="lf-c2" value="${esc(String(c.cmds[i] || '').split(/\s+\+\s+/)[1] || '')}" placeholder="Compañero" maxlength="80" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Segundo comandante del jugador ${i + 1}">
           <p class="lf-cerr" data-cerr="${i}" hidden></p></div>`).join('')}</div>
+        <label class="lf-chk"><input type="checkbox" name="pairs" ${c.cmds.some(x => /\s\+\s/.test(x || '')) ? 'checked' : ''}><span>Alguien juega con dos comandantes (compañeros)</span></label>
         <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de cuándo valen los combos de 3 o más cartas (desde el turno 5 del 3º jugador)</span></label>
         ${room ? `<p class="lf-note">Estás en la sala <b>${esc(room)}</b>: la partida nueva la verán todos los móviles de la sala.</p>` : `<label class="lf-chk"><input type="checkbox" name="share"><span>Compartir con otros móviles (te da un código para que cada uno lleve sus vidas en su móvil)</span></label>`}
         <button class="jbtn big">Empezar partida</button>
@@ -373,16 +375,9 @@
     return t.length ? `<button class="lf-tags" data-sheet="${p.id}">${t.join('')}</button>` : '';
   }
   // Botón grande de «Pasar turno» en el centro de la mesa, girado hacia quien tiene el turno
-  function centerPass(rotd) {
-    if (!turnOn() || !mine() || arrange || raffle) return '';
-    const cur = st.players.find(p => p.id === st.turn.pid);
-    if (!cur || cur.out || (dead(cur) && !dismissed.has(cur.id))) return '';
-    const topN = topNOf(st.players.length);
-    const isTop = ordered().slice(0, topN).some(p => p.id === cur.id);
-    const flip = rotd(cur, isTop);
-    const nx = nextPid();
-    // Se coloca en una unión entre paneles, para no tapar el nombre ni las vidas de nadie
-    const n = st.players.length, rows = topN ? [topN, n - topN] : [n];
+  // Se coloca en una unión entre paneles, para no tapar el nombre ni las vidas de nadie
+  function cpPos() {
+    const n = st.players.length, topN = topNOf(n), rows = topN ? [topN, n - topN] : [n];
     const bounds = r => Array.from({ length: r - 1 }, (_, i) => (i + 1) / r);
     const near = xs => xs.sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5))[0];
     let pos = null;
@@ -392,7 +387,18 @@
       rows.forEach((r, ri) => { for (const x of bounds(r)) { const d = Math.abs(x - 0.5); if (!best || d < best.d) best = { d, x, y: rows.length === 1 ? 0.5 : ri === 0 ? 0.25 : 0.75 }; } });
       pos = best || { x: 0.5, y: 0.5 };
     }
-    return `<button class="lf-cpass ${flip ? 'rot' : ''}" style="left:${(pos.x * 100).toFixed(2)}%;top:${(pos.y * 100).toFixed(2)}%" data-pass aria-label="Pasar turno${nx ? ` a ${esc(nameOfRaw(nx))}` : ''}"><b>Pasar turno</b>${nx ? `<small>a ${esc(nameOfRaw(nx))}</small>` : ''}</button>`;
+    return `left:${(pos.x * 100).toFixed(2)}%;top:${(pos.y * 100).toFixed(2)}%`;
+  }
+  // Botón grande en el centro de la mesa: «Pasar turno» (girado hacia quien tiene el turno) o, si aún no hay turnos, «Empezar turnos»
+  function centerPass(rotd) {
+    if (!mine() || arrange || raffle || st.done) return '';
+    if (!st.turn) return `<button class="lf-cpass start" style="${cpPos()}" data-turns aria-label="Empezar turnos"><b>Empezar turnos</b><small>quién empieza</small></button>`;
+    const cur = st.players.find(p => p.id === st.turn.pid);
+    if (!cur || cur.out || (dead(cur) && !dismissed.has(cur.id))) return '';
+    const isTop = ordered().slice(0, topNOf(st.players.length)).some(p => p.id === cur.id);
+    const flip = rotd(cur, isTop);
+    const nx = nextPid();
+    return `<button class="lf-cpass ${flip ? 'rot' : ''}" style="${cpPos()}" data-pass aria-label="Pasar turno${nx ? ` a ${esc(nameOfRaw(nx))}` : ''}"><b>Pasar turno</b>${nx ? `<small>a ${esc(nameOfRaw(nx))}</small>` : ''}</button>`;
   }
   function panel(p, i, rotd) {
     if (arrange) return arrangePanel(p, i, rotd);
@@ -444,7 +450,7 @@
     const showing = a.q || a.name;
     const sugs = m => (m.sug && m.sug.length ? `<span class="lf-sugs">${m.sug.map(n => `<button type="button" data-cmd-sug="${esc(n)}">${esc(n)}</button>`).join('')}</span>` : '');
     return `<div class="lf-sheet" role="dialog" aria-label="Fondo de ${esc(p.name)}"><div class="lf-sh-in"><h2>${CAS ? esc(p.name) : 'Tu fondo'}</h2>
-      ${CAS ? `<h3>Comandante</h3><form class="lf-cmdr" data-cmdr="${p.id}"><input name="cmdr" list="lf-dl" data-sug="cmd" value="${esc(p.deck || '')}" placeholder="Nombre del comandante" maxlength="120" autocomplete="off" aria-label="Comandante"><button>Guardar</button></form>
+      ${CAS ? `<h3>Comandante</h3><form class="lf-cmdr" data-cmdr="${p.id}"><input name="cmdr" list="lf-dl" data-sug="cmd" value="${esc(p.deck || '')}" placeholder="Comandante (A + B si son dos)" maxlength="160" autocomplete="off" aria-label="Comandante"><button>Guardar</button></form>
         ${cmdMsg && cmdMsg.pid === p.id ? `<p class="lf-cerr">${esc(cmdMsg.msg)}${sugs(cmdMsg)}</p>` : ''}` : ''}
       <h3>Ilustración de fondo</h3>
       <form class="lf-cmdr" data-artq="${p.id}"><input name="artq" list="lf-dl" data-sug="any" value="${esc(a.q || '')}" placeholder="Busca cualquier carta" maxlength="120" autocomplete="off" aria-label="Buscar ilustración"><button>Buscar</button></form>
@@ -693,19 +699,20 @@
     if (jf) jf.onsubmit = async e => { e.preventDefault(); const c = jf.code.value.toUpperCase().replace(/[^A-Z]/g, ''); if (c.length !== 4) return;
       room = c; roomVer = 0; store.set('mt_life_room', c); await load(true); if (room) { liveRoom(); loadArts(); } };
     const f = root.querySelector('[data-setup]');
+    f.pairs.onchange = () => f.classList.toggle('pairs', f.pairs.checked);
     f.querySelectorAll('input[name=n]').forEach(r => { r.onchange = () => f.querySelectorAll('.lf-name').forEach(d => { d.hidden = Number(d.dataset.i) >= Number(r.value); }); });
     f.addEventListener('click', e => { const b = e.target.closest('[data-fill]'); if (!b) return; const i = b.dataset.fill; f['c' + i].value = b.dataset.v; const er = f.querySelector(`[data-cerr="${i}"]`); er.hidden = true; });
     f.onsubmit = async e => {
       e.preventDefault();
       const fd = new FormData(f), n = Number(fd.get('n')) || 4, start = Number(fd.get('start')) || 40;
-      const names = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('p' + i) || '').trim()), cmds = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('c' + i) || '').trim());
+      const names = [0, 1, 2, 3, 4, 5].map(i => String(fd.get('p' + i) || '').trim()), cmds = [0, 1, 2, 3, 4, 5].map(i => [fd.get('c' + i), fd.get('pairs') ? fd.get('d' + i) : ''].map(x => String(x || '').trim()).filter(Boolean).join(' + '));
       const btn = f.querySelector('.jbtn'); btn.disabled = true; btn.textContent = 'Comprobando comandantes…';
       let bad = false;
       for (let i = 0; i < n; i++) {
         const er = f.querySelector(`[data-cerr="${i}"]`); er.hidden = true;
         if (!cmds[i]) continue;
         const r = await checkCmd(cmds[i]);
-        if (r.ok) { cmds[i] = r.name; f['c' + i].value = r.name; continue; }
+        if (r.ok) { cmds[i] = r.name; const [a1, a2] = r.name.split(' + '); f['c' + i].value = a1; f['d' + i].value = a2 || ''; continue; }
         bad = true; er.hidden = false;
         er.innerHTML = `${esc(r.msg)}${r.sug.length ? `<span class="lf-sugs">${r.sug.map(x => `<button type="button" data-fill="${i}" data-v="${esc(x)}">${esc(x)}</button>`).join('')}</span>` : ''}`;
       }

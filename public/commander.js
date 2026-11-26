@@ -91,7 +91,10 @@
             return `<span class="chip ${ob ? 'loss' : b != null ? 'win' : ''} sm">Bracket ${b != null ? (b === 2 ? '1-2' : b) : '?'}${snap.bracketMax ? ` (máx. ${snap.bracketMax === 2 ? '1-2' : snap.bracketMax})` : ''}</span>`; })()}
           ${snap.deckLocked ? '<span class="small muted">Mazo cerrado: el torneo ya empezó</span>' : `<a class="jbtn${v != null ? '-outline' : ''}" href="${B}/valor-mazo?evento=${id}">${v != null ? 'Cambiar mazo' : 'Validar mi mazo'}</a>`}</div>`;
       })() : ''}
-      ${snap.status !== 'finished' ? `<div class="deckrow"><label for="deck-in">Tu comandante</label><input id="deck-in" value="${esc((snap.roster.find(p => p.id === me.id) || {}).deck || '')}" placeholder="p. ej. Atraxa, Praetors' Voice" maxlength="80"><button class="jbtn-outline" id="deck-ok">Guardar</button><span id="deck-msg" class="small muted"></span></div>` : ''}
+      ${snap.status !== 'finished' ? (() => { const [c1, c2] = String((snap.roster.find(p => p.id === me.id) || {}).deck || '').split(/\s+\+\s+/);
+        return `<div class="deckrow"><label for="deck-in">Tu comandante</label><input id="deck-in" value="${esc(c1 || '')}" placeholder="p. ej. Atraxa, Praetors' Voice" maxlength="80">
+        <label for="deck-in2" class="small">Compañero (solo si juegas con dos comandantes)</label><input id="deck-in2" value="${esc(c2 || '')}" placeholder="p. ej. Haldan, Avid Arcanist" maxlength="80">
+        <button class="jbtn-outline" id="deck-ok">Guardar</button><span id="deck-msg" class="small muted"></span></div>`; })() : ''}
       ${snap.status === 'running' ? '</details>' : ''}
       ${st && st.form.length ? `<div class="me-stats"><span><b>${st.rank}º</b> puesto</span><span><b>${st.points}</b> pts</span><span><b>${st.wins}</b> victorias</span>${formDots(st.form, f => `R${f.r} ${formChip(f)}`)}</div>` : ''}
     </section>`;
@@ -238,7 +241,7 @@
     const dk = document.getElementById('deck-ok');
     if (dk) dk.onclick = async () => {
       const m = document.getElementById('deck-msg');
-      try { await post(`/commander/${id}/mazo`, { by: state.me.id, deck: document.getElementById('deck-in').value }); m.textContent = 'Guardado ✔'; await refresh(); }
+      try { await post(`/commander/${id}/mazo`, { by: state.me.id, deck: [document.getElementById('deck-in').value, (document.getElementById('deck-in2') || {}).value].map(x => (x || '').trim()).filter(Boolean).join(' + ') }); m.textContent = 'Guardado ✔'; await refresh(); }
       catch (e) { m.textContent = e.message; }
     };
     const ch = document.getElementById('me-change'); if (ch) ch.onclick = () => { state.me = null; state.noAuto = true; store.set('mt_me_user', null); render(); };
@@ -252,7 +255,7 @@
       snap = await r.json();
       window.UI.markOk();
       state.me = state.me ? (snap.roster.find(p => p.id === state.me.id) || resolveMe()) : resolveMe();
-      if (force || !document.activeElement || !['flt', 'who-in', 'deck-in'].includes(document.activeElement.id)) render();
+      if (force || !document.activeElement || !['flt', 'who-in', 'deck-in', 'deck-in2'].includes(document.activeElement.id)) render();
     } catch (e) { window.UI.markFail(); }
   }
 

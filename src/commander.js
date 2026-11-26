@@ -641,7 +641,7 @@ function deckLocked(ev) {
 }
 
 function setDeck(eventId, playerId, deck) {
-  db.prepare('UPDATE cmd_players SET deck = ? WHERE id = ? AND event_id = ?').run(String(deck || '').trim().slice(0, 80) || null, playerId, eventId);
+  db.prepare('UPDATE cmd_players SET deck = ? WHERE id = ? AND event_id = ?').run(String(deck || '').trim().slice(0, 160) || null, playerId, eventId);
 }
 
 function duplicateEvent(eventId, withPlayers) {
