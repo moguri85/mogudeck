@@ -227,6 +227,8 @@ const DEFAULT_SETTINGS = {
   feature_trades: '1',
   feature_loans: '1',
   feature_moments: '0',
+  feature_lfg: '1',
+  feature_casual_league: '0',
   backup_keep: '14',
 };
 

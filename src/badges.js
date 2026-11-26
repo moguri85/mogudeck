@@ -14,6 +14,12 @@ const BADGES = [
   { id: 'poliglota', name: 'Políglota', desc: 'Juegos distintos jugados en torneo', tiers: [2, 3, 4], unit: 'juegos' },
   { id: 'milcaras', name: 'Mil caras', desc: 'Comandantes distintos en Commander', tiers: [3, 7, 15], unit: 'comandantes' },
   { id: 'conpoco', name: 'Con poco', desc: 'Mesas de Commander ganadas con un mazo de menos de 50 €', tiers: [1, 3, 10], unit: 'mesas' },
+  { id: 'versatil', name: 'Versátil', desc: 'Comandantes distintos con los que has ganado una mesa', tiers: [2, 5, 10], unit: 'comandantes' },
+  { id: 'remontada', name: 'Remontada', desc: 'Mesas ganadas acabando con 5 vidas o menos (contador de vidas)', tiers: [1, 3, 10], unit: 'remontadas' },
+  { id: 'letal', name: 'Comandante letal', desc: 'Jugadores eliminados con 21 de daño de comandante', tiers: [1, 5, 15], unit: 'eliminaciones' },
+  { id: 'venenoso', name: 'Venenoso', desc: 'Jugadores eliminados con veneno', tiers: [1, 3, 10], unit: 'eliminaciones' },
+  { id: 'rayo', name: 'Rayo', desc: 'Mesas con turno medio de menos de minuto y medio («Pasar turno» en el contador)', tiers: [1, 5, 15], unit: 'mesas' },
+  { id: 'casual', name: 'Liga casual', desc: 'Partidas casuales confirmadas para la liga', tiers: [3, 10, 30], unit: 'partidas' },
   { id: 'verdugo', name: 'Verdugo', desc: 'Jugadores eliminados en mesas de Commander (contador de vidas)', tiers: [5, 20, 50], unit: 'eliminaciones' },
   { id: 'matagigantes', name: 'Matagigantes', desc: 'Victorias contra jugadores que han ganado un torneo', tiers: [1, 5, 15], unit: 'victorias' },
   { id: 'cazador', name: 'Cazarrecompensas', desc: 'Recompensas cobradas', tiers: [1, 3, 5], unit: 'recompensas' },
@@ -24,7 +30,7 @@ const BADGES = [
   { id: 'reportero', name: 'Reportero', desc: 'Fotos publicadas en la TV', tiers: [1, 5, 15], unit: 'fotos' },
 ];
 const TIER = ['', 'Bronce', 'Plata', 'Oro'];
-const XP = { kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
+const XP = { casual: 4, casualWin: 6, kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
 const RANKS = [[1, 'Novato'], [3, 'Aprendiz'], [5, 'Habitual'], [8, 'Veterano'], [12, 'Maestro'], [17, 'Leyenda']];
 const needFor = L => 25 * (L - 1) * L; // XP total para llegar al nivel L
 function levelOf(xp) {
@@ -64,8 +70,10 @@ function build() {
   const trades = new Map(db.prepare('SELECT account_id id, COUNT(*) n FROM trade_items GROUP BY account_id').all().map(r => [r.id, r.n]));
   const moms = new Map(db.prepare("SELECT account_id id, COUNT(*) n FROM moments WHERE status = 'approved' GROUP BY account_id").all().map(r => [r.id, r.n]));
 
+  let facts = new Map();
+  try { facts = require('./cmdstats').factsByKey(); } catch (e) { facts = new Map(); }
   const out = new Map();
-  const keys = new Set([...byKey.keys(), ...accOf.keys()]);
+  const keys = new Set([...byKey.keys(), ...accOf.keys(), ...facts.keys()]);
   for (const key of keys) {
     const list = byKey.get(key) || [];
     const acc = accOf.get(key) || null;
@@ -101,7 +109,13 @@ function build() {
       adivino: acc ? porra.get(acc.id) || 0 : 0, mecenas: acc ? loans.get(acc.id) || 0 : 0,
       comerciante: acc ? trades.get(acc.id) || 0 : 0, reportero: acc ? moms.get(acc.id) || 0 : 0,
     };
+    const f = facts.get(key);
+    if (f) {
+      v.milcaras = Math.max(v.milcaras, f.commanders);
+      Object.assign(v, { versatil: f.winCommanders, remontada: f.comebacks, letal: f.killsCmd, venenoso: f.killsPoison, rayo: f.fastPods, casual: f.casualGames });
+    }
     const xp = v.verdugo * XP.kill + list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
+      + (f ? f.casualGames * XP.casual + f.casualWins * XP.casualWin : 0)
       + v.adivino * XP.porraPoint + v.cazador * XP.bounty + v.mecenas * XP.loan + v.reportero * XP.moment + Math.min(v.comerciante, 50) * XP.trade;
     const badges = BADGES.map(b => {
       const val = v[b.id] || 0;

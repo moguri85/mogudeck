@@ -55,6 +55,7 @@ ${url}`);
 const { notifyPromoted } = require('../waitnotify');
 async function notifyRound(req, ev) {
   try { await personalRound(req, ev); } catch (e) { log('warn', 'Avisos personales: ' + e.message); }
+  try { require('../push').roundPaired(ev.id); } catch (e) { log('warn', 'Avisos al móvil: ' + e.message); }
   if (!notify.enabled() || setting('notify_rounds') !== '1' || !ev.public) return;
   const last = C.currentRound(ev.id);
   if (!last) return;
@@ -119,10 +120,15 @@ function eventForm(ev, action) {
     </fieldset>
     <label class="check-inline"><input type="checkbox" name="public" value="1" ${ev.public ?? 1 ? 'checked' : ''}> Visible en la web pública y la TV</label>
     <label class="check-inline"><input type="checkbox" name="self_report" value="1" ${ev.self_report ?? 1 ? 'checked' : ''}> Los jugadores pueden reportar el resultado desde el móvil (la tienda lo confirma)</label>
+    <fieldset class="full"><legend>Emparejamientos</legend>
+      <label class="check-inline"><input type="checkbox" name="avoid_regulars" value="1" ${ev.avoid_regulars ?? 1 ? 'checked' : ''}> Evitar juntar a los que ya coincidieron en torneos anteriores (si hay alternativa con los mismos puntos)</label>
+      <label class="check-inline"><input type="checkbox" name="balance_bracket" value="1" ${ev.balance_bracket ?? 1 ? 'checked' : ''}> Equilibrar las mesas por bracket del mazo (con los mazos analizados)</label>
+    </fieldset>
     <fieldset class="full"><legend>Contador de vidas</legend>
       <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
       <label>Vidas iniciales<select name="life_start">${[40, 30, 25, 20].map(n => html`<option value="${n}" ${(ev.life_start || 40) === n ? 'selected' : ''}>${n}</option>`)}</select></label>
       <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
+      <label>Turnos extra al acabar el tiempo<select name="extra_turns">${[[5, '5 turnos'], [3, '3 turnos'], [4, '4 turnos'], [6, '6 turnos'], [0, 'No contar']].map(([n, t]) => html`<option value="${n}" ${(ev.extra_turns ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Avisar de un turno largo<select name="turn_warn">${[[5, 'A los 5 minutos'], [3, 'A los 3 minutos'], [4, 'A los 4 minutos'], [6, 'A los 6 minutos'], [8, 'A los 8 minutos'], [10, 'A los 10 minutos'], [0, 'No avisar']].map(([n, t]) => html`<option value="${n}" ${(ev.turn_warn ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Combos de 2 cartas<select name="combo_lap">${[[6, 'Prohibidos antes de la vuelta 6'], [5, 'Prohibidos antes de la vuelta 5'], [4, 'Prohibidos antes de la vuelta 4'], [7, 'Prohibidos antes de la vuelta 7'], [8, 'Prohibidos antes de la vuelta 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 6) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
     </fieldset>
@@ -148,6 +154,8 @@ function eventParams(b) {
 }
 function saveLife(id, b) {
   require('../life');
+  db.prepare('UPDATE cmd_events SET avoid_regulars = ?, balance_bracket = ? WHERE id = ?').run(b.avoid_regulars ? 1 : 0, b.balance_bracket ? 1 : 0, id);
+  db.prepare('UPDATE cmd_events SET extra_turns = ? WHERE id = ?').run(b.extra_turns == null ? 5 : Math.min(Math.max(Number(b.extra_turns) || 0, 0), 10), id);
   db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ?, turn_warn = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 6 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), b.turn_warn == null ? 5 : Math.min(Math.max(Number(b.turn_warn) || 0, 0), 30), id);
 }
 const ptsN = (v, d) => (v === '' || v == null || !Number.isFinite(Number(v)) ? d : Math.min(Math.max(Math.round(Number(v)), 0), 20));
@@ -361,7 +369,10 @@ r.get('/:id', (req, res) => {
       <a href="${base(ev)}/imprimir" target="_blank">Imprimir mesas</a>
       ${ev.status === 'setup' ? html`<a href="${base(ev)}/checkin-qr" target="_blank">QR de check-in</a>` : ''}
       <a href="/qr.svg?d=${encodeURIComponent(pub)}" target="_blank">QR</a>
+      ${last ? html`<a href="${base(ev)}/informe">Informe</a>` : ''}
     </nav>
+    <div id="judgebox">${raw(judgeBox(ev))}</div>
+    ${ev.status === 'running' ? raw(`<script>setInterval(function(){fetch(location.pathname+'/juez',{cache:'no-store'}).then(function(r){return r.text()}).then(function(h){var b=document.getElementById('judgebox');if(b.innerHTML!==h)b.innerHTML=h;}).catch(function(){})},10000)</script>`) : ''}
 
     ${!last && ev.status === 'setup' ? (() => { const ck = C.checkinStats(ev.id); return html`<section class="panel checkinpanel">
       <h2>Check-in: ${ck.in} de ${ck.total} han llegado</h2>
@@ -831,6 +842,43 @@ r.post('/:id/cambiar', (req, res) => {
   catch (e) { back(res, base(ev), e.message, true); }
 });
 
+// Informe del evento: asistencia, duración real de las rondas, jugadores lentos, mesas por tiempo, juez y encuesta de brackets
+r.get('/:id/informe', (req, res) => {
+  const ev = C.getEvent(Number(req.params.id)); if (!ev) return res.redirect('/admin/commander');
+  const R = require('../cmdstats').eventReport(ev.id);
+  const n = R.night;
+  res.send(String(adminPage(req, `Informe · ${ev.name}`, html`<p><a href="${base(ev)}">← ${ev.name}</a></p>
+    <div class="stats"><div><b>${R.played}</b><span>jugadores</span></div><div><b>${R.checkedIn}</b><span>con check-in</span></div><div><b>${R.dropped}</b><span>drops</span></div>
+      ${R.waitlist ? html`<div><b>${R.waitlist}</b><span>en lista de espera</span></div>` : ''}${R.paid != null ? html`<div><b>${R.paid}</b><span>pagados</span></div>` : ''}<div><b>${R.judge.length}</b><span>llamadas a juez</span></div></div>
+    <section class="panel"><h2>Rondas</h2><div class="tablewrap"><table class="tbl"><thead><tr><th>Ronda</th><th class="num">Mesas</th><th class="num">Duración real</th><th class="num">Media por mesa</th><th class="num">Previsto</th><th class="num">Por tiempo</th></tr></thead><tbody>
+      ${R.rounds.map(rd => html`<tr><td>${rd.kind === 'final' ? 'Mesa final' : `Ronda ${rd.number}`}</td><td class="num">${rd.reported}/${rd.pods}</td><td class="num ${rd.mins != null && rd.mins > ev.round_minutes ? 'strong' : ''}">${rd.mins != null ? `${rd.mins} min` : '—'}</td>
+        <td class="num">${rd.podMins != null ? `${rd.podMins} min` : '—'}</td><td class="num">${ev.round_minutes} min</td><td class="num">${rd.overtime || ''}</td></tr>`)}</tbody></table></div>
+      <p class="small muted">Duración real: desde que se emparejó la ronda hasta el último resultado. «Por tiempo»: mesas que acabaron con turnos extra, muerte súbita o después del reloj.</p></section>
+    <div class="cols">
+      <section class="panel"><h2>Turnos más lentos</h2>${R.slow.length ? html`<ol>${R.slow.map(t => html`<li><b>${t.name}</b> · media ${L.mmss(t.avg)} · el más largo ${L.mmss(t.max)} (${t.n} turnos)</li>`)}</ol>` : html`<p class="muted">Sin datos: usad «Pasar turno» en el contador.</p>`}
+        ${R.fast.length ? html`<h3>Los más rápidos</h3><ol>${R.fast.map(t => html`<li>${t.name} · media ${L.mmss(t.avg)}</li>`)}</ol>` : ''}</section>
+      <section class="panel"><h2>Encuesta de brackets</h2>${R.votes.length ? html`<table class="tbl"><thead><tr><th>Jugador</th><th>Comandante</th><th class="num">Más fuerte</th><th class="num">Más flojo</th><th class="num">Votos</th></tr></thead><tbody>
+        ${R.votes.map(v => html`<tr class="${v.up >= 2 ? 'warnrow' : ''}"><td>${v.name}</td><td>${v.deck || ''}${v.deck_bracket ? html` <small class="muted">(B${v.deck_bracket})</small>` : ''}</td><td class="num strong">${v.up}</td><td class="num">${v.down}</td><td class="num">${v.n}</td></tr>`)}</tbody></table>`
+        : html`<p class="muted">Nadie ha señalado ningún mazo.</p>`}<p class="small muted">Al acabar la mesa, cada jugador puede decir en el contador si los mazos de sus rivales cuadraban con el bracket.</p></section>
+    </div>
+    ${n ? html`<section class="panel"><h2>La noche</h2><ul>
+      ${n.kills ? html`<li>Más eliminaciones: <b>${n.kills.name}</b> (${n.kills.n})</li>` : ''}${n.cmdDmg ? html`<li>Más daño de comandante: <b>${n.cmdDmg.name}</b> (${n.cmdDmg.n})</li>` : ''}
+      ${n.longest ? html`<li>Partida más larga: mesa ${n.longest.table} de la ronda ${n.longest.round}, ${n.longest.mins} min</li>` : ''}${n.comeback ? html`<li>Remontada: <b>${n.comeback.name}</b> ganó con ${n.comeback.life} ${n.comeback.life === 1 ? 'vida' : 'vidas'}</li>` : ''}</ul></section>` : ''}
+    ${R.judge.length ? html`<section class="panel"><h2>Llamadas a juez</h2><ul>${R.judge.map(j => html`<li>Mesa ${j.tn} · ${localAt(j.at)}${j.bn ? ` · ${j.bn}` : ''}${j.resolved_at ? html` · <small class="muted">atendida ${localAt(j.resolved_at)}</small>` : html` · <b>sin atender</b>`}</li>`)}</ul></section>` : ''}`)));
+});
+// Llamadas a juez desde el contador de vidas
+function judgeBox(ev) {
+  const calls = L.judgeCalls(ev.id, true);
+  if (!calls.length) return '';
+  return String(html`<section class="panel judgepanel" role="alert"><h2>Llaman a un juez</h2>${calls.map(c => html`<div class="payrow"><span><b>Mesa ${c.tn}</b>${c.bn ? html` · avisa ${c.bn}` : ''} <small class="muted">${localAt(c.at)}</small></span>
+    <form method="post" action="${base(ev)}/juez/${c.id}" class="inline"><button class="btn small">Atendido</button></form></div>`)}</section>`);
+}
+r.get('/:id/juez', (req, res) => { const ev = C.getEvent(Number(req.params.id)); if (!ev) return res.status(404).end(); res.set('Cache-Control', 'no-store').send(judgeBox(ev)); });
+r.post('/:id/juez/:call', (req, res) => {
+  const ev = C.getEvent(Number(req.params.id)); if (!ev) return res.redirect('/admin/commander');
+  L.resolveJudge(Number(req.params.call), (req.user && req.user.username) || 'tienda');
+  res.redirect(base(ev));
+});
 r.post('/:id/timer', (req, res) => {
   const ev = loadEv(req, res); if (!ev) return;
   const cur = C.currentRound(ev.id);
@@ -838,6 +886,7 @@ r.post('/:id/timer', (req, res) => {
   if (!req.body.stop && (ev.status === 'finished' || C.roundComplete(cur.id))) return back(res, base(ev), 'La ronda ya está terminada', true);
   const end = req.body.stop ? null : new Date(Date.now() + (Math.min(Math.max(Number(req.body.minutes) || ev.round_minutes, 1), 300)) * 60000).toISOString();
   db.prepare('UPDATE cmd_rounds SET timer_end = ? WHERE id = ?').run(end, cur.id);
+  if (end) { try { require('../push').timerStarted(ev.id, Math.round((new Date(end) - Date.now()) / 60000)); } catch (e) { log('warn', 'Avisos al móvil: ' + e.message); } }
   res.redirect(base(ev));
 });
 

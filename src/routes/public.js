@@ -337,6 +337,10 @@ r.get('/jugador/:key', (req, res) => {
           ${R.victim ? html`<a class="nemcard vic" href="${vs(R.victim.key)}"><small>Su víctima favorita</small><b>${nm(R.victim.key)}</b><span>le ha ganado ${R.victim.w} ${R.victim.w === 1 ? 'vez' : 'veces'} (${R.victim.w}-${R.victim.l}${R.victim.d ? `-${R.victim.d}` : ''})</span></a>` : ''}</div>` : ''}
         <div class="results">${R.list.slice(0, 8).map(x => html`<a class="rrow rivrow" href="${vs(x.key)}"><span class="r-name"><b>${nm(x.key)}</b></span><span class="r-pl">${x.games} ${x.games === 1 ? 'duelo' : 'duelos'}</span><span class="r-win">${x.w}-${x.l}${x.d ? `-${x.d}` : ''}</span><span class="r-go">→</span></a>`)}</div></section>`;
     })()}
+    ${(() => { const cs = require('../cmdstats').byPerson(p.key); if (!cs.length) return '';
+      return html`<section><div class="sec-row"><h2 class="sec">Comandantes</h2><a class="small" href="/comandantes">Ranking de la tienda</a></div>
+        <p class="small muted">${cs.length} ${cs.length === 1 ? 'comandante distinto' : 'comandantes distintos'} · ${cs.reduce((n, c) => n + c.games, 0)} mesas</p>
+        <div class="results">${cs.slice(0, 12).map(c => html`<div class="rrow cmdrow"><span class="r-name"><b>${c.name}</b></span><span class="r-pl">${c.games} ${c.games === 1 ? 'mesa' : 'mesas'}${c.kills ? ` · ${c.kills} elim.` : ''}</span><span class="r-win">${c.wins} ${c.wins === 1 ? 'victoria' : 'victorias'} · ${Math.round(c.rate * 100)}%</span></div>`)}</div></section>`; })()}
     ${p.games.length > 1 ? html`<section><h2 class="sec">Por juego</h2><div class="pgames">${p.games.map(g => html`<div style="--g:${melee.gameInfo(g.game).color}">
       <span class="gchip"><i></i>${gName(g.game)}</span><b>${g.events}</b><small>eventos · ${g.w}-${g.l}-${g.d}${g.titles ? ` · ${g.titles} ${g.titles === 1 ? 'título' : 'títulos'}` : ''}${g.best ? ` · mejor ${g.best}º` : ''}</small></div>`)}</div></section>` : ''}
     <section><h2 class="sec">Historial</h2><div class="results">${p.entries.map(e => html`<a class="rrow" href="${e.href}" style="--g:${melee.gameInfo(e.game).color}">
@@ -670,7 +674,7 @@ function lifeSlow(req) {
   const now = Date.now();
   const list = (lifeHits.get(req.ip) || []).filter(t => now - t < 60000);
   list.push(now); lifeHits.set(req.ip, list);
-  return list.length > 300;
+  return list.length > 1200; // en la tienda todos salen por la misma IP
 }
 r.get('/commander/:id/vidas', (req, res) => {
   const ev = C.getEvent(Number(req.params.id));
@@ -685,7 +689,7 @@ r.get('/commander/:id/vidas', (req, res) => {
 r.get('/vidas', (req, res) => {
   res.send(String(html`${head('Contador de vidas', settings(), raw('<meta name="theme-color" content="#0d0d0d"><link rel="manifest" href="vidas.webmanifest"><meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-status-bar-style" content="black"><meta name="apple-mobile-web-app-title" content="Vidas">'))}<body class="lifep">
     <div id="life"></div>
-    <script>window.__LSNAP = ${json({ casual: true })};</script>
+    <script>window.__LSNAP = ${json({ casual: true, league: feature('casual_league') })}; window.__STORE = ${json(settings().store_name || '')};</script>
     <script src="/static/ui.js"></script><script src="/static/life.js"></script></body></html>`));
 });
 r.get('/vidas.webmanifest', (req, res) => {
@@ -754,6 +758,15 @@ r.post('/commander/:id/vidas/:pod', async (req, res) => {
       const p = db.prepare('SELECT deck FROM cmd_players WHERE id = ? AND event_id = ?').get(by, ev.id);
       const list = await L.arts(p && p.deck);
       if (!list.some(a => a.url === req.body.art) && !L.knownArt(req.body.art)) throw new L.LifeError('Esa ilustración no vale');
+    }
+    if (op === 'vote') {
+      let votes = {}; try { votes = JSON.parse(req.body.votes || '{}'); } catch (e) { /* nada */ }
+      return res.json({ ...L.vote(ev.id, Number(req.params.pod), by, votes), tok });
+    }
+    if (op === 'judge') {
+      const out = L.callJudge(ev.id, Number(req.params.pod), by, Number(req.body.on), req.body.note);
+      if (Number(req.body.on)) { C.activity(ev.id, by, 'juez', `mesa ${out.table}`, req); { const N = require('../notify'); if (N.enabled()) N.send(`${ev.name}: la mesa ${out.table} llama a un juez`).catch(() => {}); } }
+      return res.json({ ...out, tok });
     }
     const out = op === 'finish' ? L.finish(ev.id, Number(req.params.pod), by, req.body.winner) : L.apply(ev.id, Number(req.params.pod), by, { ...req.body, op });
     if (['kill', 'revive', 'finish', 'reset'].includes(op)) { C.activity(ev.id, by, 'contador', `mesa ${out.table}: ${op}${req.body.pid ? ' ' + req.body.pid : ''}`, req); require('../rivals').invalidate(); }
@@ -843,11 +856,14 @@ r.get('/tv.json', (req, res) => {
   const cid = raw.startsWith('c') ? Number(raw.slice(1)) : null;
   const id = cid ? null : Number(raw) || null;
   let live = cid ? [] : id ? [data.tournament(id)].filter(t => t && !t.hidden) : data.liveTournaments();
-  const cmd = (cid ? [C.getEvent(cid)].filter(Boolean) : id ? [] : C.liveEvents()).map(e => ({
+  const cmd = (cid ? [C.getEvent(cid)].filter(Boolean) : id ? [] : C.tvEvents()).map(e => ({
     ...C.snapshot(e.id), color: '#7b5ea7', gameLabel: 'Commander',
     qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/commander/' + e.id)),
   }));
   for (const t of cmd) { const lv = require('../life').summary((t.pods || []).map(p => p.id)); for (const pod of t.pods || []) pod.life = lv.get(pod.id) || null; }
+  for (const t of cmd) if (t.status === 'finished') { try { t.night = require('../cmdstats').nightSummary(t.id); } catch (e) { t.night = null; } }
+  const cmdIds = new Set(cmd.map(t => t.id));
+  const judge = require('../life').judgeCalls(null, true).filter(j => cmdIds.has(j.event_id)).map(j => ({ id: j.id, table: j.tn }));
   const upcoming = data.upcomingTournaments(6).map(t => ({
     id: t.id, name: t.name, game: t.game, gameLabel: melee.gameInfo(t.game).short, color: melee.gameInfo(t.game).color,
     date: fmtDate(t.start_date), qr: config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/t/' + t.id)),
@@ -898,6 +914,9 @@ r.get('/tv.json', (req, res) => {
     kills: db.prepare(`SELECT k.pod_id, k.victim_id, k.killer_id, k.how, k.at, pd.table_number tn, v.name vn, v.username vu, kk.name kn, kk.username ku FROM cmd_kills k
       JOIN cmd_pods pd ON pd.id = k.pod_id JOIN cmd_players v ON v.id = k.victim_id LEFT JOIN cmd_players kk ON kk.id = k.killer_id
       WHERE k.at >= datetime('now', '-10 minutes') ORDER BY k.at`).all().map(k => ({ id: `${k.pod_id}-${k.victim_id}`, table: k.tn, victim: C.pubName({ name: k.vn, username: k.vu }), killer: k.kn ? C.pubName({ name: k.kn, username: k.ku }) : null, how: k.how })),
+    judge,
+    lfg: feature('lfg') ? require('../casual').lfgToday().map(l => ({ time: l.time, bracket: l.bracket, n: l.joined.length, slots: l.slots, note: l.note })) : [],
+    lfgQr: feature('lfg') ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/busco-mesa')) : null,
     slow: L.slowTurns().map(x => ({ ...x, mins: Math.floor(x.ms / 60000) })),
     momentsQr: feature('moments') ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/momentos/subir')) : null,
     bountiesQr: bnt.length ? config.basePath + '/qr.svg?d=' + encodeURIComponent(absUrl(req, '/recompensas')) : null,

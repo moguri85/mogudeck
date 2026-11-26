@@ -79,6 +79,7 @@
       <div class="me-main">${main}</div>
       ${(() => { const rp = snap.roster.find(p => p.id === me.id) || {}; return snap.tg && snap.status !== 'finished' && rp.pkey
     ? `<a class="tgbtn" href="${B}/avisos/${encodeURIComponent(rp.pkey)}?n=${encodeURIComponent(me.name)}" target="_blank" rel="noopener">${window.UI.bell}Avísame de mi mesa por Telegram</a>` : ''; })()}
+      ${snap.status !== 'finished' ? pushUI() : ''}
       ${snap.status === 'running' ? '<details class="me-more"><summary>Tu mazo y comandante</summary>' : ''}
       ${snap.status !== 'finished' ? (() => {
         const v = (snap.roster.find(p => p.id === me.id) || {}).value;
@@ -94,6 +95,34 @@
       ${snap.status === 'running' ? '</details>' : ''}
       ${st && st.form.length ? `<div class="me-stats"><span><b>${st.rank}º</b> puesto</span><span><b>${st.points}</b> pts</span><span><b>${st.wins}</b> victorias</span>${formDots(st.form, f => `R${f.r} ${formChip(f)}`)}</div>` : ''}
     </section>`;
+  }
+
+  // Avisos en el móvil (Web Push): «Ronda 2: mesa 3». En iPhone solo con la web instalada en la pantalla de inicio
+  const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+  const pushKey = () => `mt_push_${id}_${state.me.id}`;
+  function pushUI() {
+    if (!pushOk()) return /iPhone|iPad|iPod/.test(navigator.userAgent) ? '<p class="small muted pushhint">Para que te avise de tu mesa en el iPhone: Compartir › «Añadir a pantalla de inicio» y abre la web desde ese icono.</p>' : '';
+    const on = store.get(pushKey()) === '1';
+    return `<button class="tgbtn ${on ? 'on' : ''}" id="push-btn">${window.UI.bell}${on ? 'Te avisaremos en este móvil · quitar' : 'Avísame en el móvil cuando salga mi mesa'}</button><span id="push-msg" class="small muted" role="status"></span>`;
+  }
+  async function pushToggle() {
+    const msg = document.getElementById('push-msg');
+    try {
+      const reg = await navigator.serviceWorker.register(`${B}/sw.js`, { scope: `${B}/` });
+      await navigator.serviceWorker.ready;
+      if (store.get(pushKey()) === '1') {
+        const sub = await reg.pushManager.getSubscription();
+        if (sub) { await fetch(`${B}/push/baja`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ endpoint: sub.endpoint }) }); await sub.unsubscribe(); }
+        store.set(pushKey(), null); render(); return;
+      }
+      if ((await Notification.requestPermission()) !== 'granted') { if (msg) msg.textContent = 'Sin permiso para avisar: actívalo en los ajustes del navegador.'; return; }
+      const { key } = await (await fetch(`${B}/push/key`)).json();
+      const raw = atob(key.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - key.length % 4) % 4));
+      const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: Uint8Array.from(raw, c => c.charCodeAt(0)) });
+      const r = await fetch(`${B}/push/alta`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sub, event: id, player: state.me.id }) });
+      if (!r.ok) throw new Error((await r.json()).error || 'No se pudo activar');
+      store.set(pushKey(), '1'); render();
+    } catch (e) { if (msg) msg.textContent = e.message || 'No se pudo activar'; }
   }
 
   function podCard(pod) {
@@ -205,6 +234,7 @@
       try { await post(`/commander/${id}/reportar`, { pod: b.dataset.pod, by: state.me.id, result: b.dataset.report }); delete state.pickWin[b.dataset.pod]; await refresh(); }
       catch (e) { b.disabled = false; if (msg) msg.textContent = e.message; }
     });
+    const pb = document.getElementById('push-btn'); if (pb) pb.onclick = pushToggle;
     const dk = document.getElementById('deck-ok');
     if (dk) dk.onclick = async () => {
       const m = document.getElementById('deck-msg');

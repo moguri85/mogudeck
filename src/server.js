@@ -57,6 +57,7 @@ app.get('/healthz', (req, res) => res.json({ ok: true, sync: sync.state() }));
 app.use('/admin', require('./routes/admin'));
 app.use('/', require('./routes/cuenta'));
 app.use('/', require('./routes/comunidad').router);
+app.use('/', require('./routes/casual'));
 app.use('/', require('./routes/public'));
 
 app.use((err, req, res, next) => {

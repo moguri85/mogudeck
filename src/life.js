@@ -29,7 +29,15 @@ addColumn('cmd_life_log', 'turn_pid', 'INTEGER');
 addColumn('cmd_life_log', 'turn_n', 'INTEGER');
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
 addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6');
-addColumn('cmd_events', 'turn_warn', 'INTEGER DEFAULT 5'); // minutos para avisar de un turno largo (0 = no avisar) // combos de 2 cartas prohibidos antes de esta vuelta (0 = sin límite)
+addColumn('cmd_events', 'turn_warn', 'INTEGER DEFAULT 5');
+addColumn('cmd_events', 'extra_turns', 'INTEGER DEFAULT 5'); // turnos extra cuando se acaba el tiempo de ronda (0 = no contar)
+// Llamadas a juez desde el contador
+db.exec(`CREATE TABLE IF NOT EXISTS cmd_judge_calls (id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL, pod_id INTEGER NOT NULL, by_id INTEGER, note TEXT,
+  at TEXT DEFAULT (datetime('now')), resolved_at TEXT, resolved_by TEXT)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_judge_open ON cmd_judge_calls(resolved_at, event_id)');
+// Encuesta al acabar la mesa: ¿cada mazo era del bracket del torneo?
+db.exec(`CREATE TABLE IF NOT EXISTS cmd_bracket_votes (pod_id INTEGER NOT NULL, voter_id INTEGER NOT NULL, target_id INTEGER NOT NULL, vote TEXT NOT NULL,
+  at TEXT DEFAULT (datetime('now')), PRIMARY KEY (pod_id, voter_id, target_id))`); // minutos para avisar de un turno largo (0 = no avisar) // combos de 2 cartas prohibidos antes de esta vuelta (0 = sin límite)
 
 class LifeError extends Error {}
 const HOW = { dano: 'daño', comandante: 'daño de comandante', veneno: 'veneno', concede: 'se rindió', desempate: 'perdió el desempate', otro: 'otra forma' };
@@ -42,7 +50,7 @@ function podInfo(eventId, podId) {
 }
 function fresh(ev, players) {
   const start = [20, 25, 30, 40].includes(ev.life_start) ? ev.life_start : 40;
-  return { start, players: players.map(p => ({ id: p.id, name: C.pubName(p), deck: p.deck || '', seat: p.seat, life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })), log: [], done: null, turn: null, tstats: {} };
+  return { start, players: players.map(p => ({ id: p.id, name: C.pubName(p), deck: p.deck || '', seat: p.seat, life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })), log: [], done: null, turn: null, tstats: {}, ot: null, monarch: null, init: null, day: null, startedAt: null };
 }
 function load(eventId, podId, create = true) {
   const ev = C.getEvent(eventId);
@@ -58,8 +66,11 @@ function load(eventId, podId, create = true) {
 }
 function view(eventId, podId) {
   const x = load(eventId, podId);
-  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6, turnWarn: x.ev.turn_warn ?? 5 };
+  return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 6, turnWarn: x.ev.turn_warn ?? 5,
+    extraTurns: x.ev.extra_turns ?? 5, judge: judgeOpen(podId) };
 }
+const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
+const HOLD = { monarch: 'el Monarca', init: 'la Iniciativa' };
 const mmss = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
 const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cmd).some(v => v >= 21));
 // Quién parece haberle eliminado (para sugerirlo): daño de comandante letal, o el que más daño de comandante le ha hecho
@@ -119,6 +130,7 @@ function apply(eventId, podId, byId, body) {
     const d = Math.max(-50, Math.min(50, Math.round(Number(body.d) || 0)));
     const nm = id => (state.players.find(q => q.id === Number(id)) || {}).name || '—';
     curTurn = state.turn || null;
+    if (!state.startedAt) state.startedAt = Date.now();
     const log = (txt, kind = 'note', pid = null) => { state.log.unshift({ at: Date.now(), by: byId, txt }); state.log = state.log.slice(0, 40); note(podId, byId, kind, pid, txt); };
     switch (body.op) {
       case 'life': {
@@ -211,6 +223,8 @@ function apply(eventId, podId, byId, body) {
         if (prev && !body.pid && played.includes(next.id)) { lap++; played = [next.id]; }
         else if (!played.includes(next.id)) played = [...played, next.id];
         state.turn = { pid: next.id, n: prev ? prev.n + 1 : 1, lap, played, at: now };
+        // Se acabó el tiempo de ronda: a partir de aquí se cuentan los turnos extra
+        if (prev && !body.pid && !state.ot && pod.timer_end && new Date(pod.timer_end).getTime() <= now) { state.ot = { base: prev.n }; txt += ' · tiempo cumplido, empiezan los turnos extra'; }
         curTurn = state.turn;
         log(`Vuelta ${lap}: turno de ${next.name}${txt}`, 'turn', next.id);
         break;
@@ -222,7 +236,24 @@ function apply(eventId, podId, byId, body) {
         log(`Vuelta corregida: ${state.turn.lap}`);
         break;
       }
-      case 'turnoff': state.turn = null; log('Sin turnos'); break;
+      case 'turnoff': state.turn = null; state.ot = null; log('Sin turnos'); break;
+      // Contadores extra: impuesto de comandante, energía, experiencia; Monarca e Iniciativa; día/noche
+      case 'extra': {
+        const k = body.key; if (!EXK[k]) throw new LifeError('Contador no válido');
+        const p = P(body.pid); p.x = p.x || {};
+        const b = p.x[k] || 0; p.x[k] = Math.max(0, Math.min(99, b + d));
+        if (p.x[k] !== b) log(`${p.name}: ${EXK[k]} ${b} → ${p.x[k]}`, 'extra', p.id);
+        break;
+      }
+      case 'holder': {
+        const k = body.key; if (!HOLD[k]) throw new LifeError('No válido');
+        const p = body.pid ? P(body.pid) : null;
+        state[k] = p ? p.id : null;
+        log(p ? `${p.name} tiene ${HOLD[k]}` : `Nadie tiene ${HOLD[k]}`, 'extra', p && p.id);
+        break;
+      }
+      case 'day': state.day = ['day', 'night'].includes(body.v) ? body.v : null; log(state.day === 'day' ? 'Es de día' : state.day === 'night' ? 'Es de noche' : 'Sin día/noche'); break;
+      case 'extras': state.ex = String(body.on || '').split(',').filter(k => EXK[k] || HOLD[k] || k === 'day'); break;
       // Muerte súbita (desempate por tiempo): cualquier daño de un rival elimina; perder vidas por uno mismo no
       case 'sudden': state.sudden = !!Number(body.on); log(state.sudden ? 'Muerte súbita' : 'Fin de la muerte súbita'); break;
       case 'art': {
@@ -353,6 +384,48 @@ function killsByPod() {
   for (const k of db.prepare('SELECT * FROM cmd_kills').all()) { if (!m.has(k.pod_id)) m.set(k.pod_id, []); m.get(k.pod_id).push(k); }
   return m;
 }
+// ---------- Llamar a un juez ----------
+function judgeOpen(podId) {
+  const r = db.prepare('SELECT id, at FROM cmd_judge_calls WHERE pod_id = ? AND resolved_at IS NULL ORDER BY id DESC LIMIT 1').get(podId);
+  return r ? { id: r.id, at: r.at } : null;
+}
+function callJudge(eventId, podId, byId, on, note) {
+  const x = load(eventId, podId);
+  if (x.ev.status !== 'running') throw new LifeError('El torneo no está en juego');
+  if (!x.players.some(p => p.id === byId)) throw new LifeError('Solo puede llamar alguien de la mesa');
+  const open = judgeOpen(podId);
+  if (on && !open) db.prepare('INSERT INTO cmd_judge_calls (event_id, pod_id, by_id, note) VALUES (?, ?, ?, ?)').run(eventId, podId, byId, note ? String(note).slice(0, 140) : null);
+  if (!on && open) db.prepare("UPDATE cmd_judge_calls SET resolved_at = datetime('now'), resolved_by = 'mesa' WHERE id = ?").run(open.id);
+  db.prepare("UPDATE cmd_life SET version = version + 1 WHERE pod_id = ?").run(podId);
+  const v = view(eventId, podId);
+  setImmediate(() => bus.emit('change', podId, v.version));
+  return v;
+}
+function resolveJudge(id, who) {
+  const r = db.prepare('SELECT pod_id FROM cmd_judge_calls WHERE id = ?').get(id);
+  db.prepare("UPDATE cmd_judge_calls SET resolved_at = datetime('now'), resolved_by = ? WHERE id = ? AND resolved_at IS NULL").run(who || 'tienda', id);
+  if (r) { db.prepare("UPDATE cmd_life SET version = version + 1 WHERE pod_id = ?").run(r.pod_id); const v = db.prepare('SELECT version FROM cmd_life WHERE pod_id = ?').get(r.pod_id); if (v) setImmediate(() => bus.emit('change', r.pod_id, v.version)); }
+}
+const judgeCalls = (eventId, open = true) => db.prepare(`SELECT j.*, pd.table_number tn, p.name bn FROM cmd_judge_calls j JOIN cmd_pods pd ON pd.id = j.pod_id LEFT JOIN cmd_players p ON p.id = j.by_id
+  WHERE ${eventId ? 'j.event_id = ? AND' : ''} ${open ? 'j.resolved_at IS NULL' : '1'} ORDER BY j.id DESC`).all(...(eventId ? [eventId] : []));
+// ---------- Encuesta de bracket ----------
+function vote(eventId, podId, byId, votes) {
+  const x = load(eventId, podId, false);
+  if (!x.players.some(p => p.id === byId)) throw new LifeError('Solo vota alguien de la mesa');
+  const ins = db.prepare('INSERT OR REPLACE INTO cmd_bracket_votes (pod_id, voter_id, target_id, vote) VALUES (?, ?, ?, ?)');
+  for (const [t, v] of Object.entries(votes || {})) {
+    if (Number(t) === byId || !x.players.some(p => p.id === Number(t)) || !['ok', 'up', 'down'].includes(v)) continue;
+    ins.run(podId, byId, Number(t), v);
+  }
+  return { ok: true };
+}
+// Por jugador del evento: cuántos dijeron que su mazo iba más fuerte o más flojo
+function bracketVotes(eventId) {
+  return db.prepare(`SELECT v.target_id id, p.name, p.deck, p.deck_bracket,
+      SUM(v.vote = 'up') up, SUM(v.vote = 'down') down, SUM(v.vote = 'ok') ok, COUNT(*) n
+    FROM cmd_bracket_votes v JOIN cmd_pods pd ON pd.id = v.pod_id JOIN cmd_rounds rd ON rd.id = pd.round_id JOIN cmd_players p ON p.id = v.target_id
+    WHERE rd.event_id = ? GROUP BY v.target_id ORDER BY up DESC, down DESC`).all(eventId);
+}
 // Turnos que pasan del aviso (para la pantalla de la tienda)
 function slowTurns() {
   const now = Date.now();
@@ -379,4 +452,4 @@ function turnStats(eventId) {
 }
 const killsOf = podId => db.prepare('SELECT * FROM cmd_kills WHERE pod_id = ? ORDER BY ord').all(podId);
 
-module.exports = { cardCheck, knownArt, artName, mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };
+module.exports = { vote, bracketVotes, EXK, HOLD, callJudge, resolveJudge, judgeCalls, judgeOpen, cardCheck, knownArt, artName, mmss, slowTurns, turnStats, history, bus, arts, cmdName, LifeError, HOW, view, apply, finish, summary, killsByPod, killsOf, dead, guess };

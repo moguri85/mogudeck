@@ -27,7 +27,8 @@ const shortDate = d => fmtDate(d, { weekday: undefined, hour: undefined, minute:
 const loginHint = (req, what) => html`<div class="loginhint"><p>${what}</p><a class="jbtn" href="/entrar?next=${encodeURIComponent(req.originalUrl)}">Entrar</a> <a class="jbtn-outline" href="/registro?next=${encodeURIComponent(req.originalUrl)}">Crear cuenta</a></div>`;
 const commTabs = cur => {
   const t = [['/comunidad', 'Inicio', 'inicio', true], ['/logros', 'Logros', 'logros', feature('badges')], ['/porra', 'Porra', 'porra', feature('porra')], ['/recompensas', 'Se busca', 'recompensas', feature('bounties')],
-    ['/cambios', 'Tengo / Busco', 'cambios', feature('trades')], ['/prestamos', 'Préstamos', 'prestamos', feature('loans')]].filter(x => x[3]);
+    ['/cambios', 'Tengo / Busco', 'cambios', feature('trades')], ['/prestamos', 'Préstamos', 'prestamos', feature('loans')],
+    ['/busco-mesa', 'Busco mesa', 'buscomesa', feature('lfg')], ['/liga-casual', 'Liga casual', 'ligacasual', feature('casual_league')], ['/comandantes', 'Comandantes', 'comandantes', true]].filter(x => x[3]);
   return html`<nav class="chips commtabs" aria-label="Comunidad">${t.map(([h, l, k]) => html`<a href="${h}" class="${cur === k ? 'on' : ''}" ${cur === k ? raw('aria-current="page"') : ''}>${l}</a>`)}</nav>`;
 };
 
@@ -183,7 +184,8 @@ r.get('/logros', (req, res) => {
     <details class="xphelp"><summary>Cómo se gana experiencia</summary><ul>
       <li>Cada torneo jugado: <b>${badges.XP.event} XP</b>. Cada partida ganada: <b>${badges.XP.matchWin}</b>. Cada mesa de Commander ganada: <b>${badges.XP.podWin}</b>. Cada jugador que eliminas (contador de vidas): <b>${badges.XP.kill}</b>.</li>
       <li>Podio: <b>${badges.XP.podium} XP</b>. Torneo ganado: <b>${badges.XP.title} XP</b>.</li>
-      <li>Punto de porra: <b>${badges.XP.porraPoint} XP</b>. Recompensa cobrada: <b>${badges.XP.bounty} XP</b>. Mazo prestado y devuelto: <b>${badges.XP.loan} XP</b>. Foto publicada en la TV: <b>${badges.XP.moment} XP</b>. Cartas en Tengo / Busco: <b>${badges.XP.trade} XP</b> cada una (hasta 50).</li></ul></details>
+      <li>Punto de porra: <b>${badges.XP.porraPoint} XP</b>. Recompensa cobrada: <b>${badges.XP.bounty} XP</b>. Mazo prestado y devuelto: <b>${badges.XP.loan} XP</b>. Foto publicada en la TV: <b>${badges.XP.moment} XP</b>. Cartas en Tengo / Busco: <b>${badges.XP.trade} XP</b> cada una (hasta 50).</li>
+      ${feature('casual_league') ? html`<li>Partida de la liga casual confirmada: <b>${badges.XP.casual} XP</b> (y <b>${badges.XP.casualWin}</b> más si ganas).</li>` : ''}</ul></details>
     <section><h2 class="sec">Ranking de experiencia</h2>
       ${top.length ? html`<ol class="prank xprank">${top.map(x => html`<li class="${st && x.key === st.key ? 'me' : ''}"><span class="pos">${x.pos}</span>
         <b>${feature('profiles') ? html`<a href="/jugador/${encodeURIComponent(x.key)}">${x.name}</a>` : x.name}</b><span class="muted small">Nivel ${x.level} · ${x.title} · ${x.earned} insignias</span><em>${x.xp.toLocaleString('es-ES')} XP</em></li>`)}</ol>`
@@ -338,3 +340,4 @@ r.get('/personas.json', (req, res) => {
 });
 
 module.exports.router = r;
+module.exports.helpers = { page, flash, back, need, off, commTabs, loginHint, plink, pname, shortDate };

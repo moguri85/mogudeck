@@ -6,6 +6,7 @@ const melee = require('../melee');
 const people = require('../people');
 const K = require('../community');
 const badges = require('../badges');
+const CA = require('../casual');
 const { html, adminPage, fmtDay } = require('../views/html');
 
 const r = express.Router();
@@ -60,8 +61,20 @@ r.get('/comunidad', (req, res) => {
             ${b.status === 'claimed' ? html`<form method="post" action="/admin/comunidad/recompensa/${b.id}/active" class="inline"><button class="link">No vale, reactivar</button></form>` : ''}</td></tr>`)}</tbody></table></div>` : ''}
     </section>` : ''}
 
+    ${feature('casual_league') ? (() => { const gs = CA.allGames(60); const ST = { pending: 'Falta confirmar', ok: 'Cuenta', expired: 'Caducada' };
+      return html`<section class="panel" id="liga-casual"><h2>Liga casual</h2>
+      <p class="small muted">Partidas registradas desde el contador casual. Solo cuentan las confirmadas por todos. Si alguna es trampa, bórrala.</p>
+      ${gs.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Jugadores</th><th>Estado</th><th></th></tr></thead><tbody>${gs.map(g => html`<tr>
+        <td class="nowrap">${fmtDay(g.created_at)}</td><td>${g.players.map(p => `${p.place}º ${p.name}`).join(' · ')}</td><td><span class="pill ${g.status === 'ok' ? 'new' : ''}">${ST[g.status]}</span> <small class="muted">${g.claimed}/${g.players.length}</small></td>
+        <td><form method="post" action="/admin/comunidad/casual/${g.id}/borrar" class="inline" onsubmit="return confirm('¿Borrar esta partida de la liga?')"><button class="link danger">Borrar</button></form></td></tr>`)}</tbody></table></div>` : html`<p class="muted">Aún no hay partidas.</p>`}</section>`; })() : ''}
+
+    ${feature('lfg') ? (() => { const ls = CA.lfgList(); return html`<section class="panel"><h2>Busco mesa</h2>${ls.length ? html`<ul>${ls.map(l => html`<li>${l.day}${l.time ? ' ' + l.time : ''} · ${l.joined.length}/${l.slots} · ${l.note || ''}
+      <form method="post" action="/admin/comunidad/lfg/${l.id}/cancelar" class="inline" onsubmit="return confirm('¿Cancelar la quedada?')"><button class="link danger">Cancelar</button></form></li>`)}</ul>` : html`<p class="muted">No hay quedadas abiertas.</p>`}</section>`; })() : ''}
+
     ${feature('badges') ? html`<section class="panel"><h2>Ranking de experiencia</h2><ol class="xpadmin">${badges.leaderboard(10).map(x => html`<li><a href="/admin/jugadores/${encodeURIComponent(x.key)}">${x.name}</a> · nivel ${x.level} (${x.title}) · ${x.xp} XP · ${x.earned} insignias</li>`)}</ol></section>` : ''}`));
 });
+r.post('/comunidad/casual/:id/borrar', (req, res) => { CA.deleteGame(Number(req.params.id)); badges.invalidate && badges.invalidate(); back(res, '/admin/comunidad#liga-casual', 'Partida borrada'); });
+r.post('/comunidad/lfg/:id/cancelar', (req, res) => { CA.lfgCancel(Number(req.params.id), null, true); back(res, '/admin/comunidad', 'Quedada cancelada'); });
 r.post('/comunidad/recompensa', (req, res) => {
   try { K.addBounty(req.body, req.user.username); badges.invalidate(); back(res, '/admin/comunidad#recompensas', 'Recompensa puesta'); }
   catch (e) { back(res, '/admin/comunidad#recompensas', e.message, true); }

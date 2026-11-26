@@ -84,6 +84,10 @@ addColumn('cmd_events', 'pts_places', "TEXT DEFAULT '3,2,1,0'");
 addColumn('cmd_seats', 'place', 'INTEGER');
 addColumn('cmd_events', 'bracket_max', 'INTEGER');
 addColumn('cmd_players', 'deck_bracket', 'INTEGER');
+addColumn('cmd_events', 'avoid_regulars', 'INTEGER DEFAULT 1');
+addColumn('cmd_pods', 'reported_at', 'TEXT');
+addColumn('cmd_events', 'finished_at', 'TEXT');
+addColumn('cmd_events', 'balance_bracket', 'INTEGER DEFAULT 1');
 addColumn('cmd_players', 'deck_legal', 'INTEGER');
 addColumn('cmd_events', 'legal_check', 'INTEGER DEFAULT 0');
 addColumn('cmd_events', 'checkin_code', 'TEXT');
@@ -164,7 +168,7 @@ function stopTimers(eventId, roundId = null) {
 function finishEvent(eventId) {
   db.transaction(() => {
     stopTimers(eventId);
-    db.prepare("UPDATE cmd_events SET status = 'finished' WHERE id = ?").run(eventId);
+    db.prepare("UPDATE cmd_events SET status = 'finished', finished_at = datetime('now') WHERE id = ?").run(eventId);
   })();
 }
 
@@ -300,11 +304,20 @@ function history(eventId) {
 
 // Prioridad absoluta: mesas por orden de puntos (los de más puntos juntos, en las primeras mesas).
 // Repetir rival y repetir mesa de 3 solo se evitan intercambiando jugadores con los mismos puntos
-const W_REPEAT = 10, W_SPREAD = 1000, W_THREE = 3;
+// Además (opcionales): no juntar a los que ya coincidieron en torneos anteriores y equilibrar el bracket de los mazos
+const W_REPEAT = 10, W_SPREAD = 1000, W_THREE = 3, W_REGULAR = 2, W_BRACKET = 4;
 
-function podCost(pod, size, info, pairs) {
+function podCost(pod, size, info, pairs, ctx) {
   let c = 0;
-  for (let i = 0; i < pod.length; i++) for (let j = i + 1; j < pod.length; j++) c += (pairs.get(pairKey(pod[i], pod[j])) || 0) * W_REPEAT;
+  for (let i = 0; i < pod.length; i++) for (let j = i + 1; j < pod.length; j++) {
+    const k = pairKey(pod[i], pod[j]);
+    c += (pairs.get(k) || 0) * W_REPEAT;
+    if (ctx && ctx.prior) c += Math.min(3, ctx.prior.get(k) || 0) * W_REGULAR;
+  }
+  if (ctx && ctx.bracket) {
+    const bs = pod.map(id => info.get(id).deckBracket).filter(b => b != null);
+    if (bs.length >= 2) c += (Math.max(...bs) - Math.min(...bs)) * W_BRACKET;
+  }
   const pts = pod.map(id => info.get(id).points);
   c += (Math.max(...pts) - Math.min(...pts)) * W_SPREAD;
   if (size === 3) for (const id of pod) c += info.get(id).threes * W_THREE;
@@ -312,11 +325,11 @@ function podCost(pod, size, info, pairs) {
 }
 
 // Devuelve [[playerId,...], ...] con los tamaños indicados (sin tocar la base de datos)
-function buildPods(order, sizes, info, pairs) {
+function buildPods(order, sizes, info, pairs, ctx) {
   const pods = [];
   let k = 0;
   for (const s of sizes) { pods.push(order.slice(k, k + s)); k += s; }
-  const cost = pods.map((p, i) => podCost(p, sizes[i], info, pairs));
+  const cost = pods.map((p, i) => podCost(p, sizes[i], info, pairs, ctx));
   for (let pass = 0; pass < 60; pass++) {
     let improved = false;
     for (let i = 0; i < pods.length; i++) for (let j = i + 1; j < pods.length; j++) {
@@ -325,7 +338,7 @@ function buildPods(order, sizes, info, pairs) {
         if (info.get(pods[i][a]).points !== info.get(pods[j][b]).points) continue;
         const pi = [...pods[i]], pj = [...pods[j]];
         [pi[a], pj[b]] = [pj[b], pi[a]];
-        const ci = podCost(pi, sizes[i], info, pairs), cj = podCost(pj, sizes[j], info, pairs);
+        const ci = podCost(pi, sizes[i], info, pairs, ctx), cj = podCost(pj, sizes[j], info, pairs, ctx);
         if (ci + cj < cost[i] + cost[j] - 1e-9) {
           pods[i] = pi; pods[j] = pj; cost[i] = ci; cost[j] = cj; improved = true;
         }
@@ -339,6 +352,23 @@ function buildPods(order, sizes, info, pairs) {
   }, 0) };
 }
 
+// Veces que dos jugadores han coincidido en mesas de Commander de otros torneos (últimos 120 días), por id de jugador de este evento
+function priorPairs(eventId, active) {
+  const people = require('./people');
+  const idx = people.nameIndex();
+  const keyOf = new Map(active.map(p => [p.id, people.cmdKey(p, idx)]));
+  const byKey = new Map();
+  for (const [id, k] of keyOf) { if (!byKey.has(k)) byKey.set(k, []); byKey.get(k).push(id); }
+  const out = new Map();
+  for (const e of require('./rivals').all()) {
+    if (e.source !== 'commander' || e.eventId === eventId) continue;
+    if (e.date && Date.now() - new Date(String(e.date).replace(' ', 'T')) > 120 * 864e5) continue;
+    const A = byKey.get(e.a), Bs = byKey.get(e.b);
+    if (!A || !Bs) continue;
+    for (const a of A) for (const b of Bs) { const k = pairKey(a, b); out.set(k, (out.get(k) || 0) + 1); }
+  }
+  return out;
+}
 function seatPod(pod, info, rand) {
   // Turno 1º (empieza) para quien menos veces lo ha tenido; el resto al azar
   const sorted = shuffle(pod, rand).sort((a, b) => info.get(a).seat1 - info.get(b).seat1);
@@ -380,6 +410,7 @@ function pairNextRound(eventId) {
   // Ronda 1 al azar; después por clasificación
   const ordered = ev.three_pods === 'top' ? [...sizes].reverse() : sizes;
   const pairs = history(eventId);
+  const ctx = { prior: ev.avoid_regulars ?? 1 ? priorPairs(eventId, active) : null, bracket: !!(ev.balance_bracket ?? 1) };
   // Varios intentos (orden de clasificación y variantes barajando empatados a puntos); se queda el de menor coste
   let best = null;
   for (let attempt = 0; attempt < 40; attempt++) {
@@ -391,8 +422,8 @@ function pairNextRound(eventId) {
       order = active.map(p => ({ id: p.id, k: p.points, r: rand() }))
         .sort((a, b) => b.k - a.k || a.r - b.r).map(x => x.id);
     }
-    const res = buildPods(order, ordered, info, pairs);
-    const total = res.pods.reduce((s, p, i) => s + podCost(p, ordered[i], info, pairs), 0);
+    const res = buildPods(order, ordered, info, pairs, ctx);
+    const total = res.pods.reduce((s, p, i) => s + podCost(p, ordered[i], info, pairs, ctx), 0);
     if (!best || total < best.total) best = { ...res, total };
     if (roundNo === 1) break;
   }
@@ -464,6 +495,7 @@ function reportPod(podId, result) {
     db.prepare('UPDATE cmd_seats SET place = 1 WHERE pod_id = ? AND player_id = ?').run(podId, pid);
     db.prepare('UPDATE cmd_pods SET winner_id = ?, is_draw = 0, reported = 1 WHERE id = ?').run(pid, podId);
   }
+  db.prepare("UPDATE cmd_pods SET reported_at = CASE WHEN reported = 1 THEN COALESCE(reported_at, datetime('now')) ELSE NULL END WHERE id = ?").run(podId);
   // Con todas las mesas terminadas, el reloj de la ronda ya no tiene sentido
   if (result !== 'clear' && roundComplete(pod.round_id)) stopTimers(null, pod.round_id);
   if (result !== 'clear') clearProposal(podId);
@@ -729,6 +761,8 @@ function paymentStats(eventId) {
 function liveEvents() {
   return db.prepare("SELECT * FROM cmd_events WHERE status = 'running' AND public = 1 ORDER BY id").all();
 }
+// Para la TV: también los que acaban de terminar (resumen de la noche durante 3 horas)
+const tvEvents = () => db.prepare("SELECT * FROM cmd_events WHERE public = 1 AND (status = 'running' OR (status = 'finished' AND finished_at >= datetime('now', '-3 hours'))) ORDER BY id").all();
 
 // ---------- Móviles de los jugadores (sin cuentas) ----------
 // El primer móvil que actúa como un jugador recibe un código; desde entonces solo ese móvil puede actuar como él,
@@ -823,6 +857,7 @@ function dropAbsent(eventId) {
 }
 
 module.exports = {
+  tvEvents,
   checkinCode, setCheckin, checkinStats, dropAbsent,
   cardMeta, pointsFor, scoringText, placesList, waitlisted, signup, withdraw, promoteWaitlist, entryOf, SignupError, activeCount, setPaid, paymentStats,
   claim, ClaimError, activity, recentActivity, releasePhone, setPhoneLock, clearPlayerData,

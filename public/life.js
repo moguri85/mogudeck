@@ -64,8 +64,16 @@
   }
   async function load(force) {
     if (CAS) {
-      try { st = JSON.parse(store.get('mt_life_casual') || 'null'); } catch (e) { st = null; }
+      if (room) {
+        try {
+          const r = await fetch(`${B}/vidas/sala/${room}.json`, { cache: 'no-store' });
+          if (r.status === 404) { leaveRoom('Esa sala ya no existe: sigues con la partida en este móvil.'); }
+          else { const j = await r.json(); if (force || (!roomBusy && j.version > roomVer)) { st = j.state; roomVer = j.version; saveCas(); } }
+        } catch (e) { /* sin conexión: seguimos con lo que hay */ }
+      }
+      if (!st || force) { try { st = (room && st) || JSON.parse(store.get('mt_life_casual') || 'null'); } catch (e) { st = null; } }
       info = { comboLap: (st && st.combo) || 0, turnWarn: 0 };
+      if (hist && st) hist = (st.hist || []).slice();
       render(); return;
     }
     if (!pod) return;
@@ -146,8 +154,8 @@
         break;
       }
       case 'reset':
-        st.players.forEach(p => Object.assign(p, { life: st.start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null }));
-        Object.assign(st, { turn: null, tstats: {}, sudden: false, hist: [], log: [] });
+        st.players.forEach(p => Object.assign(p, { life: st.start, poison: 0, cmd: {}, x: {}, out: false, killer: null, how: null, ord: null }));
+        Object.assign(st, { turn: null, tstats: {}, sudden: false, hist: [], log: [], monarch: null, init: null, day: null, done: null, league: null, startedAt: Date.now() });
         dismissed.clear();
         hpush({ kind: 'reset', txt: 'Partida nueva con los mismos jugadores' });
         break;
@@ -166,14 +174,70 @@
       }
       case 'lap': hpush({ kind: 'note', txt: `Vuelta corregida: ${st.turn.lap}` }); break;
       case 'turnoff': hpush({ kind: 'note', txt: 'Sin turnos' }); break;
+      case 'extra': { const p = P(b.pid), v = (p.x || {})[b.key] || 0; if (b.rd) hpush({ kind: 'extra', pid: p.id, turn: tTag(), txt: `${p.name}: ${EXK[b.key].toLowerCase()} ${v - b.rd} → ${v}` }); break; }
+      case 'holder': hpush({ kind: 'extra', txt: b.pid ? `${nameOf(b.pid)} tiene ${b.key === 'monarch' ? 'el Monarca' : 'la Iniciativa'}` : `Nadie tiene ${b.key === 'monarch' ? 'el Monarca' : 'la Iniciativa'}` }); break;
+      case 'day': hpush({ kind: 'note', txt: st.day === 'night' ? 'Es de noche' : 'Es de día' }); break;
       default: break;
     }
+  }
+  // ---- Sala compartida: la partida casual se sincroniza entre varios móviles con un código ----
+  let room = null, roomVer = 0, roomBusy = false, roomT = null, roomInfo = null, roomEs = null, league = null;
+  if (CAS) {
+    const q = new URLSearchParams(location.search).get('sala');
+    room = (q || store.get('mt_life_room') || '').toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || null;
+    if (q) { store.set('mt_life_room', room); history.replaceState(null, '', location.pathname); }
+  }
+  function pushRoom() {
+    if (!room) return;
+    clearTimeout(roomT);
+    roomT = setTimeout(async () => {
+      roomBusy = true;
+      try {
+        const r = await fetch(`${B}/vidas/sala/${room}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: st, base: roomVer }) });
+        const j = await r.json();
+        if (r.status === 409) { st = j.state; roomVer = j.version; saveCas(); err = 'Otro móvil cambió la partida a la vez: revisa el último cambio.'; render(); }
+        else if (r.ok) { roomVer = j.version; if (err) { err = ''; render(); } }
+        else if (r.status === 400 && /sala/.test(j.error || '')) leaveRoom(j.error);
+      } catch (e) { /* sin conexión: se reintenta con el siguiente cambio */ }
+      roomBusy = false;
+    }, 150);
+  }
+  async function makeRoom() {
+    try {
+      const r = await fetch(`${B}/vidas/sala`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: st }) });
+      const j = await r.json(); if (!r.ok) throw new Error(j.error);
+      room = j.code; roomVer = j.version; roomInfo = j; store.set('mt_life_room', room); liveRoom(); render();
+    } catch (e) { err = e.message || 'No se pudo compartir'; render(); }
+  }
+  async function showRoom() { try { roomInfo = { ...(await (await fetch(`${B}/vidas/sala/${room}/qr`)).json()), code: room }; } catch (e) { roomInfo = { code: room }; } render(); }
+  function leaveRoom(msg) { room = null; roomVer = 0; roomInfo = null; store.set('mt_life_room', null); try { roomEs && roomEs.close(); } catch (e) { /* nada */ } if (msg) err = msg; render(); }
+  function liveRoom() {
+    if (!room || !window.EventSource) return;
+    try { roomEs && roomEs.close(); } catch (e) { /* nada */ }
+    roomEs = new EventSource(`${B}/vidas/sala/${room}/stream`);
+    roomEs.onmessage = e => { if (Number(e.data) > roomVer && !roomBusy) load(false); };
+    roomEs.onopen = () => root.classList.add('pushing');
+    roomEs.onerror = () => root.classList.remove('pushing');
+  }
+  const roomView = () => `<div class="lf-sheet" role="dialog" aria-label="Partida compartida"><div class="lf-sh-in lf-roomsh"><h2>Partida compartida</h2>
+    <p>Desde otro móvil: abre <b>${esc((roomInfo && roomInfo.url) || '')}</b> o escanea el QR. Todos veis y cambiáis la misma partida.</p>
+    <div class="lf-code">${esc(room || '')}</div>${roomInfo && roomInfo.qr ? `<img class="lf-qr" src="${esc(roomInfo.qr)}" alt="QR para unirse">` : ''}
+    <div class="lf-endb"><button class="jbtn big" data-close-room>Hecho</button><button class="jbtn big ghost" data-leave-room>Salir de la sala</button></div></div></div>`;
+  const leagueView = () => `<div class="lf-sheet" role="dialog" aria-label="Registrar para la liga"><div class="lf-sh-in lf-roomsh"><h2>Registrar para la liga</h2>
+    ${league.error ? `<p class="lf-cerr">${esc(league.error)}</p>` : !league.url ? '<p>Registrando…</p>' : `<p>Cada jugador abre este enlace o escanea el QR, entra con su cuenta y pulsa «Soy yo». Cuenta cuando lo han confirmado todos.</p>
+    <img class="lf-qr" src="${esc(league.qr)}" alt="QR para confirmar"><p class="small"><a href="${esc(league.url)}" target="_blank" rel="noopener">${esc(league.url)}</a></p>`}
+    <button class="jbtn big" data-close-league>Hecho</button></div></div>`;
+  async function registerLeague() {
+    league = {}; render();
+    try { const r = await fetch(`${B}/vidas/liga`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ state: st, room }) }); const j = await r.json(); if (!r.ok) throw new Error(j.error); league = j; st.league = j.url; saveCas(); pushRoom(); }
+    catch (e) { league = { error: e.message || 'No se pudo registrar' }; }
+    render();
   }
   function casualAct(body, optimistic) {
     const prev = st.turn ? { ...st.turn } : null;
     if (optimistic) optimistic();
     casualOp(body, prev);
-    saveCas();
+    saveCas(); pushRoom();
     if (hist) hist = (st.hist || []).slice();
     render();
     return Promise.resolve();
@@ -194,8 +258,11 @@
           <input name="c${i}" value="${esc(c.cmds[i] || '')}" placeholder="Comandante" maxlength="120" list="lf-dl" data-sug="cmd" autocomplete="off" aria-label="Comandante del jugador ${i + 1}">
           <p class="lf-cerr" data-cerr="${i}" hidden></p></div>`).join('')}</div>
         <label class="lf-chk"><input type="checkbox" name="combo" ${c.combo ? 'checked' : ''}><span>Avisar de que los combos de 2 cartas no valen antes de la vuelta 6</span></label>
+        ${room ? `<p class="lf-note">Estás en la sala <b>${esc(room)}</b>: la partida nueva la verán todos los móviles de la sala.</p>` : `<label class="lf-chk"><input type="checkbox" name="share"><span>Compartir con otros móviles (te da un código para que cada uno lleve sus vidas en su móvil)</span></label>`}
         <button class="jbtn big">Empezar partida</button>
-      </form><a class="lf-back" href="${B}/">← Volver</a></div>`;
+      </form>
+      ${room ? '' : `<form class="lf-join" data-join><label>¿Te han pasado un código?<span><input name="code" maxlength="4" placeholder="ABCD" autocomplete="off" autocapitalize="characters"><button>Unirme</button></span></label></form>`}
+      <a class="lf-back" href="${B}/">← Volver</a></div>`;
   }
 
   // Toques: un toque es ±1; si mantienes pulsado, ±5 y repite mientras sigas pulsando
@@ -274,6 +341,27 @@
         <span>${pick === p.id ? 'Ahora toca el sitio donde lo quieres' : pick ? 'Toca para cambiarlo de sitio' : 'Toca para moverlo'}</span>
         <button data-prot="${p.id}">Girar 180º</button></div></div></section>`;
   }
+  // ---- Contadores extra (impuesto, energía, experiencia), Monarca/Iniciativa y día/noche ----
+  const EXK = { tax: 'Impuesto de comandante', energy: 'Energía', exp: 'Experiencia' };
+  const HOLD = { monarch: 'Monarca', init: 'Iniciativa' };
+  const exOn = k => (st.ex || []).includes(k);
+  // Cambios locales (se ven al momento; el servidor o el motor casual hacen el resto)
+  function mut(b) {
+    const P = x => st.players.find(q => q.id === Number(x));
+    if (b.op === 'extra') { const p = P(b.pid); p.x = p.x || {}; p.x[b.key] = Math.max(0, (p.x[b.key] || 0) + Number(b.d)); }
+    else if (b.op === 'holder') st[b.key] = b.pid ? Number(b.pid) : null;
+    else if (b.op === 'day') st.day = b.v || null;
+    else if (b.op === 'extras') st.ex = String(b.on || '').split(',').filter(Boolean);
+  }
+  function tagsView(p) {
+    const x = p.x || {}, t = [];
+    if (exOn('tax') && x.tax) t.push(`<span title="Impuesto de comandante">Imp +${2 * x.tax}</span>`);
+    if (exOn('energy') && x.energy) t.push(`<span title="Energía">Energía ${x.energy}</span>`);
+    if (exOn('exp') && x.exp) t.push(`<span title="Experiencia">Exp ${x.exp}</span>`);
+    if (exOn('monarch') && st.monarch === p.id) t.push('<span class="hold" title="Monarca">♛ Monarca</span>');
+    if (exOn('init') && st.init === p.id) t.push('<span class="hold" title="Iniciativa">Iniciativa</span>');
+    return t.length ? `<button class="lf-tags" data-sheet="${p.id}">${t.join('')}</button>` : '';
+  }
   function panel(p, i, rotd) {
     if (arrange) return arrangePanel(p, i, rotd);
     const isDead = dead(p) && !dismissed.has(p.id);
@@ -284,9 +372,9 @@
     const own = CAS || (mine() && me.id === p.id);
     const myTurn = turnOn() && st.turn.pid === p.id && !p.out;
     const pass = myTurn && mine() && !isDead ? '<button class="lf-pass" data-pass>Pasar turno</button>' : '';
-    return `<section class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
+    return `<section data-pid="${p.id}" class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
-        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}</header>
+        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}${otTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}${tagsView(p)}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
             <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
@@ -308,7 +396,9 @@
     return `<div class="lf-sheet" role="dialog" aria-label="Daño a ${esc(p.name)}"><div class="lf-sh-in"><h2>Daño que recibe ${esc(p.name)}</h2>
       <h3>Daño de comandante (21 elimina)</h3>${st.players.filter(x => x.id !== p.id).map(o => row(`de ${esc(o.name)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}"`, p.cmd[o.id] || 0, 21)).join('')}
       <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
-      <p class="small">El daño de comandante también resta vidas.</p><button class="jbtn big" data-close>Hecho</button></div></div>`;
+      ${['tax', 'energy', 'exp'].filter(exOn).map(k => `<h3>${EXK[k]}${k === 'tax' ? ` · cuesta +${2 * ((p.x || {}).tax || 0)}` : ''}</h3>${row(k === 'tax' ? 'Veces lanzado' : 'Contadores', 'extra', `data-pid="${p.id}" data-key="${k}"`, (p.x || {})[k] || 0, 999)}`).join('')}
+      ${['monarch', 'init'].filter(exOn).map(k => `<h3>${HOLD[k]}</h3><div class="lf-turns">${st[k] === p.id ? `<button class="on" data-holder="${k}" data-hp="">${esc(p.name)} lo tiene · quitar</button>` : `<button data-holder="${k}" data-hp="${p.id}">Dárselo a ${esc(p.name)}</button>`}</div>`).join('')}
+      <p class="small">El daño de comandante también resta vidas.${!(st.ex || []).length ? ' Impuesto, energía, experiencia, Monarca, Iniciativa y día/noche se activan en Opciones › Contadores extra.' : ''}</p><button class="jbtn big" data-close>Hecho</button></div></div>`;
   }
   // Fondo: cualquier ilustración (la búsqueda no cambia el comandante). En casual, el comandante va aparte y se comprueba que exista
   let cmdMsg = null;
@@ -349,6 +439,113 @@
     }
     return { ok: true, name: out.join(' + ') };
   }
+  let exSheet = false, dice = null, raffle = null, survey = null;
+  // Encuesta: ¿el mazo de cada rival cuadraba con el bracket del torneo? (lo ve solo la tienda)
+  function surveyView() {
+    const opts = [['ok', 'Bien'], ['up', 'Más fuerte'], ['down', 'Más flojo']];
+    return `<div class="lf-sheet" role="dialog" aria-label="Encuesta de bracket"><div class="lf-sh-in"><h2>¿Cada mazo era del bracket del torneo?</h2>
+      <p class="small">Solo lo ve la tienda, para revisar mazos que no cuadran. No hace falta contestar todo.</p>
+      ${st.players.filter(p => p.id !== me.id).map(p => `<div class="lf-svr"><span><b>${esc(p.name)}</b>${p.deck ? `<small>${esc(p.deck)}</small>` : ''}</span>
+        <div class="lf-seg2">${opts.map(([v, t]) => `<button data-sv="${p.id}" data-v="${v}" class="${survey[p.id] === v ? 'on' : ''}">${t}</button>`).join('')}</div></div>`).join('')}
+      <div class="lf-endb"><button class="jbtn big" data-sv-send>Enviar</button><button class="jbtn big ghost" data-sv-close>Ahora no</button></div></div></div>`;
+  }
+  function exSheetView() {
+    const all = [['tax', 'Impuesto de comandante'], ['energy', 'Energía'], ['exp', 'Experiencia'], ['monarch', 'Monarca'], ['init', 'Iniciativa'], ['day', 'Día y noche']];
+    return `<div class="lf-sheet" role="dialog" aria-label="Contadores extra"><div class="lf-sh-in"><h2>Contadores extra</h2>
+      <p class="small">Activa solo los que uséis. Salen en el panel de cada jugador (toca para cambiarlos) y todos los de la mesa los ven.</p>
+      <div class="lf-exl">${all.map(([k, t]) => `<label class="lf-chk"><input type="checkbox" data-exk="${k}" ${exOn(k) ? 'checked' : ''}><span>${t}</span></label>`).join('')}</div>
+      <button class="jbtn big" data-close-ex>Hecho</button></div></div>`;
+  }
+  function diceView() {
+    return `<div class="lf-sheet" role="dialog" aria-label="Dados"><div class="lf-sh-in lf-dice"><h2>Dados y moneda</h2>
+      <div class="lf-dres ${dice && dice.rolling ? 'rolling' : ''}" aria-live="polite">${dice ? esc(dice.v) : '—'}</div>
+      <div class="lf-turns"><button data-roll="20">d20</button><button data-roll="6">d6</button><button data-roll="coin">Moneda</button></div>
+      <button class="jbtn big" data-close-dice>Cerrar</button></div></div>`;
+  }
+  function roll(k) {
+    const pick = () => (k === 'coin' ? (Math.random() < 0.5 ? 'Cara' : 'Cruz') : String(1 + Math.floor(Math.random() * Number(k))));
+    let n = 0; dice = { v: pick(), rolling: true }; render();
+    const it = setInterval(() => {
+      n++; const el = root.querySelector('.lf-dres'); if (el) el.textContent = pick();
+      if (n >= 12) { clearInterval(it); dice = { v: pick(), rolling: false }; if (navigator.vibrate) navigator.vibrate(20); render(); }
+    }, 70);
+  }
+  // Sorteo de quién empieza: va pasando por los paneles, frena y se queda en uno
+  function runRaffle() {
+    const alive = ring().filter(p => !p.out);
+    if (!alive.length || raffle) return;
+    const win = alive[Math.floor(Math.random() * alive.length)];
+    const steps = alive.length * 3 + alive.indexOf(win);
+    turnSheet = false; render();
+    let i = 0;
+    raffle = true;
+    const tick = () => {
+      root.querySelectorAll('.lf-p.raffle').forEach(e => e.classList.remove('raffle'));
+      const el = root.querySelector(`.lf-p[data-pid="${alive[i % alive.length].id}"]`); if (el) el.classList.add('raffle');
+      if (i >= steps) {
+        raffle = null;
+        if (navigator.vibrate) navigator.vibrate([30, 40, 60]);
+        setTimeout(() => act({ op: 'turn', pid: win.id }, () => { st.turn = { pid: win.id, n: 1, lap: 1, played: [win.id], at: Date.now() + skew }; }), 700);
+        return;
+      }
+      i++;
+      setTimeout(tick, 70 + Math.pow(i / steps, 3) * 380);
+    };
+    tick();
+  }
+  // Turnos extra cuando se acaba el tiempo de ronda (solo torneo)
+  function otInfo() {
+    if (CAS || !info.extraTurns || !st.turn) return null;
+    const c = clockTxt();
+    if (st.ot) { const k = st.turn.n - st.ot.base; return { k, of: info.extraTurns, over: k > info.extraTurns }; }
+    return c && c.over ? { k: 0, of: info.extraTurns } : null;
+  }
+  const otTag = () => { const o = otInfo(); if (!o) return '';
+    return `<span class="lf-combo ${o.over ? 'no' : 'ot'}">${o.k === 0 ? `Tiempo: acaba este turno y quedan ${o.of} extra` : o.over ? 'Sin turnos extra: se acaba la partida' : `Turno extra ${o.k} de ${o.of}`}</span>`; };
+  // Tarjeta para compartir el resultado
+  async function shareCard() {
+    const W = 1080, H = 1350, c = document.createElement('canvas'); c.width = W; c.height = H;
+    const g = c.getContext('2d');
+    const alive = st.players.filter(p => !p.out);
+    const order = st.done ? st.done.order.map(id => st.players.find(p => p.id === id)) : [...alive, ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)];
+    const win = order[0];
+    g.fillStyle = '#0d0d0d'; g.fillRect(0, 0, W, H);
+    const art = artOf(win);
+    let hasArt = false;
+    if (art) {
+      try {
+        const img = await new Promise((ok, ko) => { const im = new Image(); im.crossOrigin = 'anonymous'; im.onload = () => ok(im); im.onerror = ko; im.src = art; setTimeout(ko, 4000); });
+        const r = Math.max(W / img.width, 620 / img.height); g.drawImage(img, (W - img.width * r) / 2, 0, img.width * r, img.height * r); hasArt = true;
+      } catch (e) { /* sin ilustración */ }
+    }
+    const gr = g.createLinearGradient(0, 200, 0, 640); gr.addColorStop(0, 'rgba(13,13,13,0)'); gr.addColorStop(1, '#0d0d0d'); g.fillStyle = gr; g.fillRect(0, 0, W, 640);
+    g.fillStyle = '#f47700'; g.fillRect(0, 0, W, 14);
+    const font = (w, px) => `${w} ${px}px Inter, Roboto, "Segoe UI", Arial, sans-serif`;
+    const fit = (txt, w, px, max) => { let s = px; g.font = font(w, s); while (g.measureText(txt).width > max && s > 20) { s -= 2; g.font = font(w, s); } return s; };
+    const dy = hasArt ? 0 : -300 + Math.max(0, (6 - order.length) * 40);
+    g.fillStyle = '#fff'; fit(`¡${win.name} gana!`, 800, 92, W - 120); g.fillText(`¡${win.name} gana!`, 60, 560 + dy);
+    if (win.deck) { g.fillStyle = '#f47700'; fit(win.deck, 600, 40, W - 120); g.fillText(win.deck, 60, 620 + dy); }
+    let y = 720 + dy;
+    order.forEach((p, i) => {
+      g.fillStyle = i ? '#1c1c1c' : '#2a1600'; g.fillRect(60, y - 52, W - 120, 96);
+      g.fillStyle = i ? '#999' : '#f47700'; g.font = font(800, 44); g.fillText(`${i + 1}º`, 90, y + 12);
+      g.fillStyle = '#fff'; fit(p.name, 700, 40, 520); g.fillText(p.name, 190, y);
+      g.fillStyle = '#aaa'; const sub = [p.deck, p.out ? (p.killer ? `eliminado por ${nameOfRaw(p.killer)}` : (HOW[p.how] || 'eliminado')) : `${p.life} vidas`].filter(Boolean).join(' · ');
+      fit(sub, 400, 26, W - 260); g.fillText(sub, 190, y + 34);
+      y += 116;
+    });
+    const t0 = st.startedAt, t1 = (st.done && st.done.at) || Date.now();
+    const meta = [t0 ? `Duración ${mmss(t1 - t0).replace(/^(\d+):(\d+)$/, (m, a, b) => (a >= 60 ? `${Math.floor(a / 60)} h ${a % 60} min` : `${a} min`))}` : '', st.turn ? `${st.turn.lap || 1} ${(st.turn.lap || 1) === 1 ? 'vuelta' : 'vueltas'}` : ''].filter(Boolean).join(' · ');
+    g.fillStyle = '#bbb'; g.font = font(500, 30); g.fillText(meta, 60, H - 110);
+    g.fillStyle = '#f47700'; g.font = font(800, 34); g.fillText((window.__STORE || 'Júpiter Juegos'), 60, H - 56);
+    g.fillStyle = '#777'; g.font = font(500, 26); const tag = 'Contador de vidas'; g.fillText(tag, W - 60 - g.measureText(tag).width, H - 56);
+    const blob = await new Promise(ok => { try { c.toBlob(ok, 'image/png'); } catch (e) { ok(null); } });
+    if (!blob) { err = 'No se pudo crear la imagen'; render(); return; }
+    const file = new File([blob], 'partida.png', { type: 'image/png' });
+    try { if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: `¡${win.name} gana!` }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'partida.png'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  const nameOfRaw = pid => ((st.players.find(p => p.id === Number(pid))) || {}).name || '—';
   function statsView() {
     const ts = st.tstats || {};
     const rows = st.players.filter(p => ts[p.id] && ts[p.id].n).map(p => { const t = ts[p.id]; return `<tr><td>${esc(p.name)}</td><td>${t.n}</td><td>${mmss(t.ms / t.n)}</td><td>${mmss(t.max)}</td><td>${mmss(t.ms)}</td></tr>`; });
@@ -358,6 +555,7 @@
     const alive = st.players.filter(p => !p.out).sort((a, b) => a.seat - b.seat);
     return `<div class="lf-sheet" role="dialog" aria-label="Turnos"><div class="lf-sh-in"><h2>${st.turn ? '¿De quién es el turno?' : '¿Quién empieza?'}</h2>
       <p class="small">«Pasar turno» va al siguiente en el sentido de las agujas del reloj, según estéis colocados en la pantalla. La vuelta sube cuando vuelve a tocarle a quien ya ha jugado${info.comboLap ? `; los combos de 2 cartas no valen antes de la vuelta ${info.comboLap}` : ''}.</p>
+      ${!st.turn ? '<button class="jbtn big lf-raf" data-raffle>Sortear quién empieza</button>' : ''}
       <div class="lf-turns">${alive.map(p => `<button data-turn-to="${p.id}" class="${st.turn && st.turn.pid === p.id ? 'on' : ''}">${esc(p.name)}</button>`).join('')}</div>
       ${st.turn ? `<div class="lf-row"><span>Vuelta</span><button data-lap="-1">−</button><b>${st.turn.lap || 1}</b><button data-lap="1">+</button></div>` : ''}
       ${statsView()}
@@ -383,11 +581,12 @@
     if (st.done) {
       const ord = st.done.order.map((pid, i) => `${i + 1}º ${nm(pid)}`).join(' · ');
       return `<div class="lf-end done"><b>${info.reported || st.done.auto ? 'Resultado anotado ✔' : 'Resultado enviado'}</b><span>${ord}</span>${!info.reported && !st.done.auto ? '<small>Falta que lo confirme la tienda.</small>' : ''}
-        <a href="${B}/commander/${id}">Volver al torneo</a></div>`;
+        ${mine() && !store.get(`mt_vote_${pod.id}`) ? '<button class="jbtn big lf-raf" data-survey>¿Los mazos eran del bracket? (10 s)</button>' : ''}
+        <button class="link" data-share>Compartir imagen</button><a href="${B}/commander/${id}">Volver al torneo</a></div>`;
     }
     if (alive.length === 1 && !st.players.some(p => dead(p) && !dismissed.has(p.id))) {
       return `<div class="lf-end"><b>¡${esc(alive[0].name)} gana ${CAS ? 'la partida' : 'la mesa'}!</b><span>${[alive[0], ...st.players.filter(p => p.out).sort((a, b) => b.ord - a.ord)].map((p, i) => `${i + 1}º ${esc(p.name)}`).join(' · ')}</span>
-        ${CAS ? '<div class="lf-endb"><button class="jbtn big" data-rematch>Revancha</button><button class="jbtn big ghost" data-new>Cambiar jugadores</button></div>'
+        ${CAS ? (S.league ? (st.league ? `<p class="small">Registrada para la liga: <a href="${esc(st.league)}" target="_blank" rel="noopener">confirmadla cada uno</a></p>` : '<button class="jbtn big lf-raf" data-league>Registrar para la liga casual</button>') : '') + '<div class="lf-endb"><button class="jbtn big" data-rematch>Revancha</button><button class="jbtn big ghost" data-new>Cambiar jugadores</button><button class="jbtn big ghost" data-share>Compartir</button></div>'
         : mine() ? '<button class="jbtn big" data-finish="">Enviar resultado</button>' : '<small>Uno de la mesa tiene que enviar el resultado.</small>'}</div>`;
     }
     if (st.sudden) {
@@ -431,23 +630,26 @@
     const rotd = (p, def) => (p.id in lay.rot ? lay.rot[p.id] : def);
     const canPlay = mine() && !st.done && !arrange;
     root.innerHTML = `<div class="lf n${n} ${st.sudden ? 'is-sudden' : ''} ${arrange ? 'is-arr' : ''}">
-      <div class="lf-bar"><a href="${home}" aria-label="Volver">←</a><span>${CAS ? 'Partida casual' : `Mesa ${pod.table}`}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
+      <div class="lf-bar"><a href="${home}" aria-label="Volver">←</a><span>${CAS ? (room ? `Sala ${room}` : 'Partida casual') : `Mesa ${pod.table}`}${info.round ? ` · ronda ${info.round}` : ''}${!mine() ? ' · mirando' : ''}</span>
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
-      ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
+        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+      ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button><button data-exsheet>Contadores extra</button><button data-dice>Dados y moneda</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
-        ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? '<button data-new>Cambiar jugadores</button>' : '<button data-whoami>Cambiar quién soy</button>'}
+        ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? `<button data-new>Cambiar jugadores</button>${room ? '<button data-roomsh>Compartir partida (código)</button>' : '<button data-share-room>Compartir con otros móviles</button>'}` : '<button data-whoami>Cambiar quién soy</button>'}
         <p class="small">Para que la pantalla no se apague y se vea a pantalla completa, instálalo: ${/iPhone|iPad|iPod/.test(navigator.userAgent) ? 'botón Compartir › «Añadir a pantalla de inicio» (no funciona en modo privado)' : 'menú del navegador › «Añadir a pantalla de inicio»'}.</p></div>` : ''}
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
       <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
-      ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}${asking ? askView() : ''}</div>`;
+      ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}${exSheet ? exSheetView() : ''}${survey ? surveyView() : ''}${roomInfo ? roomView() : ''}${league ? leagueView() : ''}${dice ? diceView() : ''}${asking ? askView() : ''}</div>`;
     bind();
   }
   function bindSetup() {
+    const jf = root.querySelector('[data-join]');
+    if (jf) jf.onsubmit = async e => { e.preventDefault(); const c = jf.code.value.toUpperCase().replace(/[^A-Z]/g, ''); if (c.length !== 4) return;
+      room = c; roomVer = 0; store.set('mt_life_room', c); await load(true); if (room) { liveRoom(); loadArts(); } };
     const f = root.querySelector('[data-setup]');
     f.querySelectorAll('input[name=n]').forEach(r => { r.onchange = () => f.querySelectorAll('.lf-name').forEach(d => { d.hidden = Number(d.dataset.i) >= Number(r.value); }); });
     f.addEventListener('click', e => { const b = e.target.closest('[data-fill]'); if (!b) return; const i = b.dataset.fill; f['c' + i].value = b.dataset.v; const er = f.querySelector(`[data-cerr="${i}"]`); er.hidden = true; });
@@ -468,11 +670,12 @@
       btn.disabled = false; btn.textContent = 'Empezar partida';
       if (bad) return;
       store.set('mt_life_casual_cfg', JSON.stringify({ n, start, names, cmds, combo: !!fd.get('combo') }));
-      st = { casual: true, start, combo: fd.get('combo') ? 6 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
+      st = { casual: true, startedAt: Date.now(), start, combo: fd.get('combo') ? 6 : 0, done: null, turn: null, tstats: {}, sudden: false, log: [], hist: [],
         players: Array.from({ length: n }, (_, i) => ({ id: i + 1, seat: i + 1, name: names[i] || `Jugador ${i + 1}`, deck: cmds[i], life: start, poison: 0, cmd: {}, out: false, killer: null, how: null, ord: null })) };
       info = { comboLap: st.combo, turnWarn: 0 };
       lay = { order: [], rot: {} }; saveLay(); arts = {}; dismissed.clear();
       saveCas(); render(); loadArts();
+      if (room) pushRoom(); else if (fd.get('share')) makeRoom();
     };
   }
   // Confirmaciones dentro de la página: el confirm() del navegador, en iPhone, ofrece «Eliminar cuadros de diálogo» y luego ya no deja confirmar nada
@@ -504,6 +707,33 @@
     on('[data-rematch]', () => act({ op: 'reset' }));
     on('[data-new]', () => ask('¿Empezar otra partida con otros jugadores? Se borra la actual.', 'Cambiar jugadores', newGame));
     on('[data-ask-no]', () => { asking = null; render(); });
+    on('[data-survey]', () => { survey = {}; render(); });
+    on('[data-sv]', b => { survey[b.dataset.sv] = b.dataset.v; render(); });
+    on('[data-sv-close]', () => { survey = null; render(); });
+    on('[data-sv-send]', async () => { const v = survey; survey = null; store.set(`mt_vote_${pod.id}`, '1'); render();
+      try { await post({ op: 'vote', votes: JSON.stringify(v) }); } catch (e) { err = e.message; render(); } });
+    on('[data-share-room]', () => { menu = false; makeRoom(); });
+    on('[data-roomsh]', () => { menu = false; showRoom(); });
+    on('[data-close-room]', () => { roomInfo = null; render(); });
+    on('[data-leave-room]', () => ask('¿Salir de la sala? Sigues con la partida en este móvil, pero ya no se sincroniza.', 'Salir', () => leaveRoom()));
+    on('[data-league]', () => registerLeague());
+    on('[data-close-league]', () => { league = null; render(); });
+    on('[data-exsheet]', () => { menu = false; exSheet = true; render(); });
+    on('[data-close-ex]', () => { exSheet = false; render(); });
+    root.querySelectorAll('[data-exk]').forEach(cb => { cb.onchange = () => {
+      const on = [...root.querySelectorAll('[data-exk]')].filter(x => x.checked).map(x => x.dataset.exk).join(',');
+      const b = { op: 'extras', on }; act(b, () => mut(b));
+    }; });
+    on('[data-holder]', b => { const x = { op: 'holder', key: b.dataset.holder, pid: b.dataset.hp }; act(x, () => mut(x)); });
+    on('[data-daynight]', () => { const x = { op: 'day', v: st.day === 'day' ? 'night' : 'day' }; act(x, () => mut(x)); });
+    on('[data-dice]', () => { menu = false; dice = { v: '—' }; render(); });
+    on('[data-close-dice]', () => { dice = null; render(); });
+    on('[data-roll]', b => roll(b.dataset.roll));
+    on('[data-raffle]', () => runRaffle());
+    on('[data-share]', () => shareCard());
+    on('[data-judge]', () => (info.judge
+      ? ask('¿Ya no hace falta el juez? Se quita el aviso.', 'Quitar aviso', () => act({ op: 'judge', on: 0 }, () => { info.judge = null; }))
+      : ask('¿Llamar a un juez a esta mesa? Le sale el aviso a la tienda.', 'Llamar a juez', () => act({ op: 'judge', on: 1 }, () => { info.judge = { at: Date.now() }; }))));
     on('[data-ask-yes]', () => { const a = asking; asking = null; a.fn(); render(); });
     on('[data-ask-alt]', () => { const a = asking; asking = null; a.alt.fn(); render(); });
     root.querySelectorAll('[data-cmdr]').forEach(f => { f.onsubmit = async e => {
@@ -527,7 +757,8 @@
       act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => { b.onclick = () => {
       const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
-      if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d, rd: nv - cur }); }
+      if (b.dataset.op === 'extra') { const x = { op: 'extra', pid: p.id, key: b.dataset.key, d }; const o = (p.x || {})[x.key] || 0; mut(x); x.rd = ((p.x || {})[x.key] || 0) - o; act(x); }
+      else if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d, rd: nv - cur }); }
       else { const o = p.poison; p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d, rd: p.poison - o }); }
       if (navigator.vibrate) navigator.vibrate(6);
     }; });
@@ -628,7 +859,7 @@
   if (pod) loadLay();
   wake();
   render();
-  if (CAS) { load(true); loadArts(); }
+  if (CAS) { load(true).then(() => { loadArts(); if (room) liveRoom(); }); setInterval(() => { if (room && (!roomEs || roomEs.readyState !== 1)) load(false); }, 3000); }
   else if (pod) {
     load(true).then(() => loadArts());
     live();

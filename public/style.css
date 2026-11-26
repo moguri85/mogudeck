@@ -1640,3 +1640,64 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-ask .ghost { background: #f0f0f0; color: #111 !important; }
 .lf-ask .lf-endb { flex-direction: column; } .lf-ask .lf-endb .jbtn { flex: none; width: 100%; }
 .lf-ask .alt { background: #111; color: #fff !important; }
+/* Contador: contadores extra, sorteo, dados, turnos extra, juez */
+.lf-tags { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px; margin-top: 2px; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; font: inherit; }
+.lf-tags span { font: 700 clamp(10px, 5cqh, 12px) var(--font); background: rgba(0,0,0,.45); color: #fff; border-radius: 99px; padding: 1px 8px; }
+.lf-tags span.hold { background: #f2c94c; color: #000; }
+.lf-p.raffle { box-shadow: inset 0 0 0 6px #fff, 0 0 0 4px #f47700, 0 0 40px rgba(244,119,0,.8); transform: scale(1.02); transition: transform .08s; z-index: 2; }
+.lf-raf { width: 100%; margin: 6px 0 4px; border: 0; min-height: 48px; border-radius: 12px; background: #f47700; color: #000 !important; font: 700 16px var(--font); cursor: pointer; }
+.lf-dice .lf-dres { font: 800 96px/1.1 var(--display, var(--font)); text-align: center; margin: 8px 0 12px; color: #111; font-variant-numeric: tabular-nums; }
+.lf-dice .lf-dres.rolling { color: #f47700; }
+.lf-exl { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin: 10px 0 14px; }
+.lf-exl .lf-chk { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: center; color: #111; font: 600 15px var(--font); }
+.lf-exl .lf-chk input { width: 22px; height: 22px; accent-color: #f47700; margin: 0; }
+.lf-combo.ot { background: #f2c94c; color: #000; }
+.lf-bar button.dn { background: #1b2a4a; border-color: #2f4f8f; }
+.judgepanel { border: 2px solid #b42318; background: #fff4f2; } .judgepanel h2 { color: #b42318; }
+/* Contador casual: salas compartidas y liga */
+.lf-code { font: 800 64px/1 var(--display, var(--font)); letter-spacing: .15em; text-align: center; color: #111; margin: 8px 0; }
+.lf-qr { display: block; width: min(220px, 60vw); height: auto; margin: 8px auto 12px; background: #fff; }
+.lf-roomsh p { color: #333; }
+.lf-join { margin-top: 18px; } .lf-join label { display: grid; gap: 6px; color: #bbb; font: 600 14px var(--font); }
+.lf-join span { display: flex; gap: 8px; } .lf-join input { flex: 1; min-height: 44px; border-radius: 10px; border: 1px solid #333; background: #161616; color: #fff; padding: 0 12px; font: 700 20px var(--font); letter-spacing: .2em; text-transform: uppercase; -webkit-user-select: text; user-select: text; }
+.lf-join button { min-height: 44px; border-radius: 10px; border: 0; background: #f47700; color: #000; font: 700 15px var(--font); padding: 0 18px; cursor: pointer; }
+/* Comunidad: busco mesa y liga casual */
+.lfg { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); margin: 10px 0 20px; }
+.lfgc { border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; }
+.lfgc header { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.lfgc.full { opacity: .7; } .lfgc p { margin: 0; }
+.lfgform { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; align-items: end; } .lfgform .wide { grid-column: 1 / -1; }
+.cconf { list-style: none; padding: 0; display: grid; gap: 8px; } .cconf li { display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px solid var(--line, #ddd); border-radius: 12px; padding: 10px 12px; }
+.cconf li.ok { border-color: #1e9e5a; } .cconf li span { display: grid; } .cconf li small { color: #777; } .cconf li em { font-style: normal; color: #1e9e5a; font-weight: 600; }
+.clist { padding-left: 18px; }
+.lf-svr { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee; flex-wrap: wrap; }
+.lf-svr span { display: grid; color: #111; } .lf-svr small { color: #777; }
+.lf-seg2 { display: flex; gap: 4px; } .lf-seg2 button { min-height: 40px; padding: 0 12px; border-radius: 10px; border: 1px solid #ddd; background: #f4f4f4; font: 600 14px var(--font); cursor: pointer; }
+.lf-seg2 button.on { background: #f47700; border-color: #f47700; color: #000; }
+/* TV: mesas en directo, resumen de la noche, busco mesa, juez y cuenta atrás */
+.tv-livet { display: grid; grid-template-columns: repeat(2, 1fr); gap: 2.4vh 2vw; margin-top: 2vh; }
+.tv-livet .lt { background: #161616; border-radius: 2vh; padding: 2vh 2vw; border: .3vh solid #2a2a2a; }
+.tv-livet .lt.close { border-color: #f47700; }
+.lt-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 1.4vh; } .lt-h b { font: 800 3.6vh var(--font); color: #fff; } .lt-h span { font: 700 2.2vh var(--font); color: #f47700; text-transform: none; }
+.lt-p { display: grid; grid-template-columns: 26% 1fr 9%; align-items: center; gap: 1vw; margin: 1vh 0; font: 600 2.6vh var(--font); color: #ddd; }
+.lt-p span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lt-p i { display: block; height: 2.2vh; border-radius: 99px; background: linear-gradient(90deg, #f47700 var(--w), #262626 var(--w)); }
+.lt-p b { font: 800 3vh var(--font); color: #fff; text-align: right; font-variant-numeric: tabular-nums; }
+.lt-p.ko { opacity: .4; }
+.tv-night { display: grid; grid-template-columns: repeat(auto-fit, minmax(28vw, 1fr)); gap: 2.4vh 2vw; margin-top: 3vh; }
+.tv-night .nt { background: #161616; border-radius: 2vh; padding: 3vh 2vw; border-left: .8vh solid #f47700; display: grid; gap: .8vh; }
+.tv-night small { font: 700 2.2vh var(--font); color: #f47700; } .tv-night b { font: 800 5vh/1.1 var(--font); color: #fff; } .tv-night span { font: 500 2.4vh var(--font); color: #aaa; }
+.tv-lfg { display: grid; grid-template-columns: repeat(auto-fit, minmax(26vw, 1fr)); gap: 2vh 2vw; margin-top: 3vh; }
+.tv-lfg div { background: #161616; border-radius: 2vh; padding: 3vh 2vw; display: grid; gap: 1vh; } .tv-lfg b { font: 800 6vh var(--font); color: #f47700; } .tv-lfg span { font: 600 2.8vh var(--font); color: #fff; } .tv-lfg em { font: 500 2.2vh var(--font); color: #aaa; font-style: normal; }
+.tv-judge { position: fixed; top: 2vh; left: 50%; transform: translate(-50%, -150%); opacity: 0; z-index: 95; display: flex; align-items: center; gap: 1.4vw; background: #b42318; color: #fff; border-radius: 99px; padding: 1.4vh 2.4vw; font: 700 3vh var(--font); box-shadow: 0 1.6vh 4vh rgba(0,0,0,.6); transition: transform .4s; }
+.tv-judge.on { opacity: 1; transform: translate(-50%, 0); animation: tvj 1.4s ease-in-out infinite alternate; }
+.tv-judge b { background: #fff; color: #b42318; border-radius: 99px; padding: .2vh 1.2vw; } .tv-judge span { font-weight: 800; } .tv-judge em { font-style: normal; font-weight: 500; }
+@keyframes tvj { to { background: #e11d48; } }
+.tv-bigclock { position: fixed; right: 3vw; bottom: 8vh; z-index: 85; background: #111; border: .5vh solid #f47700; border-radius: 3vh; padding: 1.4vh 2.4vw 2vh; font: 800 13vh/1 var(--display, var(--font)); color: #fff; font-variant-numeric: tabular-nums; display: none; text-align: center; box-shadow: 0 2vh 6vh rgba(0,0,0,.7); }
+.tv-bigclock.on { display: block; } .tv-bigclock.over { border-color: #e11d48; color: #ff6b81; }
+.tv-bigclock small { display: block; font: 700 2.2vh var(--font); color: #f47700; margin-bottom: .6vh; max-width: 30vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tv-flash { position: fixed; inset: 0; z-index: 99; display: grid; place-items: center; background: rgba(244,119,0,.92); opacity: 0; transition: opacity .5s; pointer-events: none; }
+.tv-flash.over { background: rgba(180,35,24,.94); }
+.tv-flash b { font: 800 14vh/1 var(--display, var(--font)); color: #000; text-align: center; transform: scale(.8); transition: transform .5s cubic-bezier(.2, 1.4, .4, 1); }
+.tv-flash.over b { color: #fff; } .tv-flash.on { opacity: 1; } .tv-flash.on b { transform: scale(1); }
+@media (prefers-reduced-motion: reduce) { .tv-judge.on { animation: none; } .tv-flash b { transition: none; } }
