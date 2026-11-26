@@ -367,6 +367,28 @@
     if (exOn('init') && st.init === p.id) t.push('<span class="hold" title="Iniciativa">Iniciativa</span>');
     return t.length ? `<button class="lf-tags" data-sheet="${p.id}">${t.join('')}</button>` : '';
   }
+  // Botón grande de «Pasar turno» en el centro de la mesa, girado hacia quien tiene el turno
+  function centerPass(rotd) {
+    if (!turnOn() || !mine() || arrange || raffle) return '';
+    const cur = st.players.find(p => p.id === st.turn.pid);
+    if (!cur || cur.out || (dead(cur) && !dismissed.has(cur.id))) return '';
+    const topN = topNOf(st.players.length);
+    const isTop = ordered().slice(0, topN).some(p => p.id === cur.id);
+    const flip = rotd(cur, isTop);
+    const nx = nextPid();
+    // Se coloca en una unión entre paneles, para no tapar el nombre ni las vidas de nadie
+    const n = st.players.length, rows = topN ? [topN, n - topN] : [n];
+    const bounds = r => Array.from({ length: r - 1 }, (_, i) => (i + 1) / r);
+    const near = xs => xs.sort((a, b) => Math.abs(a - 0.5) - Math.abs(b - 0.5))[0];
+    let pos = null;
+    if (rows.length === 2) { const common = bounds(rows[0]).filter(x => bounds(rows[1]).some(y => Math.abs(x - y) < 1e-6)); if (common.length) pos = { x: near(common), y: 0.5 }; }
+    if (!pos) {
+      let best = null;
+      rows.forEach((r, ri) => { for (const x of bounds(r)) { const d = Math.abs(x - 0.5); if (!best || d < best.d) best = { d, x, y: rows.length === 1 ? 0.5 : ri === 0 ? 0.25 : 0.75 }; } });
+      pos = best || { x: 0.5, y: 0.5 };
+    }
+    return `<button class="lf-cpass ${flip ? 'rot' : ''}" style="left:${(pos.x * 100).toFixed(2)}%;top:${(pos.y * 100).toFixed(2)}%" data-pass aria-label="Pasar turno${nx ? ` a ${esc(nameOfRaw(nx))}` : ''}"><b>Pasar turno</b>${nx ? `<small>a ${esc(nameOfRaw(nx))}</small>` : ''}</button>`;
+  }
   function panel(p, i, rotd) {
     if (arrange) return arrangePanel(p, i, rotd);
     const isDead = dead(p) && !dismissed.has(p.id);
@@ -376,7 +398,7 @@
     const art = artOf(p);
     const own = CAS || (mine() && me.id === p.id);
     const myTurn = turnOn() && st.turn.pid === p.id && !p.out;
-    const pass = myTurn && mine() && !isDead ? '<button class="lf-pass" data-pass>Pasar turno</button>' : '';
+    const pass = ''; // «Pasar turno» va en grande en el centro de la mesa (centerPass)
     return `<section data-pid="${p.id}" class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
         <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}${otTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}${tagsView(p)}</header>
@@ -654,7 +676,7 @@
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
-      <div class="lf-grid">${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
+      <div class="lf-grid">${centerPass(rotd)}${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
       ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}${exSheet ? exSheetView() : ''}${survey ? surveyView() : ''}${roomInfo ? roomView() : ''}${league ? leagueView() : ''}${dice ? diceView() : ''}${asking ? askView() : ''}</div>`;
     bind();
   }

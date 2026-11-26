@@ -1702,3 +1702,13 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .tv-flash.over b { color: #fff; } .tv-flash.on { opacity: 1; } .tv-flash.on b { transform: scale(1); }
 @media (prefers-reduced-motion: reduce) { .tv-judge.on { animation: none; } .tv-flash b { transition: none; } }
 .lf-bar button:disabled { opacity: .45; cursor: not-allowed; }
+/* «Pasar turno» grande en el centro de la mesa */
+.lf-grid { position: relative; }
+.lf-cpass { position: absolute; left: 50%; top: 50%; z-index: 6; width: clamp(92px, 24vmin, 150px); aspect-ratio: 1; transform: translate(-50%, -50%); border-radius: 50%;
+  border: 5px solid #0d0d0d; background: #f47700; color: #000; display: grid; place-content: center; gap: 2px; text-align: center; cursor: pointer; padding: 6px;
+  box-shadow: 0 0 0 3px #f47700, 0 8px 24px rgba(0,0,0,.6); touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
+.lf-cpass.rot { transform: translate(-50%, -50%) rotate(180deg); }
+.lf-cpass b { font: 800 clamp(14px, 4.2vmin, 22px)/1.05 var(--font); }
+.lf-cpass small { font: 600 clamp(10px, 2.6vmin, 13px)/1.1 var(--font); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-cpass:active { filter: brightness(.9); }
+.lf.is-arr .lf-cpass { display: none; }
