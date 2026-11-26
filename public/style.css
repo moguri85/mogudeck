@@ -1712,3 +1712,10 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .lf-cpass small { font: 600 clamp(10px, 2.6vmin, 13px)/1.1 var(--font); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lf-cpass:active { filter: brightness(.9); }
 .lf.is-arr .lf-cpass { display: none; }
+/* Impuesto de comandante junto al nombre */
+.lf-nm { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; }
+.lf-nm b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lf-tax { flex: none; border: 0; border-radius: 99px; background: rgba(0,0,0,.45); color: #fff; font: 700 clamp(11px, 5.5cqh, 14px) var(--font); padding: 3px 10px; min-height: 28px; cursor: pointer; touch-action: manipulation; }
+.lf-tax:active { background: #000; }
+.lf-p:not(.art) .lf-tax { background: rgba(0,0,0,.28); }
+.lf-dual { margin: 6px 0 4px; } .lf-dual summary { cursor: pointer; color: #555; font: 600 14px var(--font); padding: 6px 0; }

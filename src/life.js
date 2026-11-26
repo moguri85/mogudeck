@@ -74,6 +74,7 @@ function view(eventId, podId) {
   return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 5, comboSeat: x.ev.combo_seat || 1, comboLabel: x.ev.combo_label || 'Combos de 3 o más cartas', turnWarn: x.ev.turn_warn ?? 5,
     extraTurns: x.ev.extra_turns ?? 5, timeMode: x.ev.time_mode || 'lap', judge: judgeOpen(podId) };
 }
+const cmdKey = fromId => (fromId < 0 ? `${-fromId}b` : String(fromId));
 const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
 const HOLD = { monarch: 'el Monarca', init: 'la Iniciativa' };
 const mmss = ms => { const x = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(x / 60)}:${String(x % 60).padStart(2, '0')}`; };
@@ -81,7 +82,7 @@ const dead = p => !p.out && (p.life <= 0 || p.poison >= 10 || Object.values(p.cm
 // Quién parece haberle eliminado (para sugerirlo): daño de comandante letal, o el que más daño de comandante le ha hecho
 function guess(p) {
   const lethal = Object.entries(p.cmd).find(([, v]) => v >= 21);
-  if (lethal) return { killer: Number(lethal[0]), how: 'comandante' };
+  if (lethal) return { killer: parseInt(lethal[0], 10), how: 'comandante' };
   if (p.poison >= 10) return { killer: null, how: 'veneno' };
   return { killer: null, how: 'dano' };
 }
@@ -118,7 +119,7 @@ function history(eventId, podId, limit = 300) {
     let txt = r.text;
     if (r.kind === 'life') txt = `${nm(r.pid)}: ${sg(r.delta)} ${Math.abs(r.delta) === 1 ? 'vida' : 'vidas'} (${r.before_v} → ${r.after_v})`;
     else if (r.kind === 'poison') txt = `${nm(r.pid)}: ${sg(r.delta)} veneno (${r.before_v} → ${r.after_v})`;
-    else if (r.kind === 'cmd') txt = `${nm(r.pid)}: ${sg(r.delta)} de comandante de ${nm(r.from_id)} (${r.before_v} → ${r.after_v}; vidas ${r.life_after})`;
+    else if (r.kind === 'cmd') txt = `${nm(r.pid)}: ${sg(r.delta)} de comandante de ${nm(Math.abs(r.from_id))}${r.from_id < 0 ? ' (2º comandante)' : ''} (${r.before_v} → ${r.after_v}; vidas ${r.life_after})`;
     return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, turn: r.turn_n && ['life', 'poison', 'cmd', 'kill'].includes(r.kind) ? `Vuelta ${r.turn_n} · turno de ${nm(r.turn_pid)}` : '', undone: !!r.undone, canUndo: ['life', 'poison', 'cmd'].includes(r.kind) && !r.undone };
   });
 }
@@ -149,14 +150,17 @@ function apply(eventId, podId, byId, body) {
         trackChange(podId, byId, 'poison', p.id, null, b, p.poison, p.life);
         break;
       }
+      // Daño de comandante: uno por comandante (los mazos con compañero llevan dos: el 2º va en «<id>b»)
       case 'cmd': {
         const p = P(body.pid), f = P(body.from);
         if (p.id === f.id) throw new LifeError('El daño de comandante es de otro jugador');
-        const cur = p.cmd[f.id] || 0, nv = Math.max(0, Math.min(99, cur + d));
-        p.cmd[f.id] = nv; p.life = Math.max(-99, p.life - (nv - cur));
-        trackChange(podId, byId, 'cmd', p.id, f.id, cur, nv, p.life);
+        const slot = Number(body.slot) === 1 ? 1 : 0, key = slot ? `${f.id}b` : String(f.id);
+        const cur = p.cmd[key] || 0, nv = Math.max(0, Math.min(99, cur + d));
+        p.cmd[key] = nv; p.life = Math.max(-99, p.life - (nv - cur));
+        trackChange(podId, byId, 'cmd', p.id, slot ? -f.id : f.id, cur, nv, p.life);
         break;
       }
+      case 'dual': { const p = P(body.pid); p.dual = !!Number(body.on); log(p.dual ? `${p.name} juega con dos comandantes` : `${p.name} juega con un comandante`); break; }
       // Deshacer un apunte del historial (el último de vidas, veneno o comandante que no esté deshecho)
       case 'undo': {
         const r = db.prepare("SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND kind IN ('life','poison','cmd') ORDER BY id DESC LIMIT 1").get(podId);
@@ -166,7 +170,7 @@ function apply(eventId, podId, byId, body) {
         if (p.out) throw new LifeError(`${p.name} está eliminado: usa «Deshacer» en su panel primero`);
         if (r.kind === 'life') p.life -= r.delta;
         else if (r.kind === 'poison') p.poison = Math.max(0, p.poison - r.delta);
-        else { p.cmd[r.from_id] = Math.max(0, (p.cmd[r.from_id] || 0) - r.delta); p.life += r.delta; }
+        else { const k = cmdKey(r.from_id); p.cmd[k] = Math.max(0, (p.cmd[k] || 0) - r.delta); p.life += r.delta; }
         db.prepare('UPDATE cmd_life_log SET undone = 1 WHERE id = ?').run(r.id);
         log(`Deshecho: ${history(eventId, podId, 400).find(h => h.id === r.id).txt}`, 'undo', p.id);
         break;

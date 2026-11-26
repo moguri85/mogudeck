@@ -102,7 +102,7 @@
 
   // ---- Motor local del modo casual (mismas acciones que el servidor, guardadas en este aparato) ----
   const saveCas = () => store.set('mt_life_casual', st ? JSON.stringify(st) : null);
-  const nameOf = pid => ((st.players.find(p => p.id === Number(pid))) || {}).name || '—';
+  const nameOf = pid => ((st.players.find(p => p.id === parseInt(pid, 10))) || {}).name || '—';
   const tTag = () => (st.turn ? `Vuelta ${st.turn.lap || 1} · turno de ${nameOf(st.turn.pid)}` : '');
   function hpush(e) {
     st.hist = st.hist || [];
@@ -114,7 +114,7 @@
     const sg = n => (n > 0 ? `+${n}` : `−${-n}`), n = nameOf(h.pid);
     if (h.kind === 'life') return `${n}: ${sg(h.d)} ${Math.abs(h.d) === 1 ? 'vida' : 'vidas'} (${h.before} → ${h.after})`;
     if (h.kind === 'poison') return `${n}: ${sg(h.d)} veneno (${h.before} → ${h.after})`;
-    return `${n}: ${sg(h.d)} de comandante de ${nameOf(h.from)} (${h.before} → ${h.after})`;
+    return `${n}: ${sg(h.d)} de comandante de ${nameOf(h.from)}${String(h.from).endsWith('b') ? ' (2º comandante)' : ''} (${h.before} → ${h.after})`;
   }
   function track(kind, p, from, d, after) {
     if (!d) return;
@@ -133,7 +133,8 @@
     switch (b.op) {
       case 'life': track('life', P(b.pid), 0, rd, P(b.pid).life); break;
       case 'poison': track('poison', P(b.pid), 0, rd, P(b.pid).poison); break;
-      case 'cmd': track('cmd', P(b.pid), Number(b.from), rd, P(b.pid).cmd[b.from] || 0); break;
+      case 'cmd': { const k = Number(b.slot) === 1 ? `${b.from}b` : String(b.from); track('cmd', P(b.pid), k, rd, P(b.pid).cmd[k] || 0); break; }
+      case 'dual': hpush({ kind: 'note', txt: `${nameOf(b.pid)} juega con ${Number(b.on) ? 'dos comandantes' : 'un comandante'}` }); break;
       case 'undo': {
         const h = (st.hist || []).find(x => x.canUndo);
         if (!h) break;
@@ -349,7 +350,11 @@
   // ---- Contadores extra (impuesto, energía, experiencia), Monarca/Iniciativa y día/noche ----
   const EXK = { tax: 'Impuesto de comandante', energy: 'Energía', exp: 'Experiencia' };
   const HOLD = { monarch: 'Monarca', init: 'Iniciativa' };
-  const exOn = k => (st.ex || []).includes(k);
+  const exOn = k => (st.ex ? st.ex.includes(k) : k === 'tax'); // el impuesto de comandante viene puesto de serie
+  // Mazos con dos comandantes (compañeros): daño de comandante por separado de cada uno
+  const dualOf = o => !!(o.dual || /\s\+\s/.test(o.deck || ''));
+  const cmdNames = o => { const n = String(o.deck || '').split(/\s+\+\s+/).map(x => x.trim()).filter(Boolean); return n.length === 2 ? n : ['1º comandante', '2º comandante']; };
+  const taxBtn = p => (exOn('tax') && !p.out && !arrange ? `<button class="lf-tax" data-tax="${p.id}" aria-label="Sumar un lanzamiento del comandante de ${esc(p.name)}" title="Impuesto de comandante: toca cada vez que lo lances">Impuesto +${2 * ((p.x || {}).tax || 0)}</button>` : '');
   // Cambios locales (se ven al momento; el servidor o el motor casual hacen el resto)
   function mut(b) {
     const P = x => st.players.find(q => q.id === Number(x));
@@ -357,10 +362,10 @@
     else if (b.op === 'holder') st[b.key] = b.pid ? Number(b.pid) : null;
     else if (b.op === 'day') st.day = b.v || null;
     else if (b.op === 'extras') st.ex = String(b.on || '').split(',').filter(Boolean);
+    else if (b.op === 'dual') { const p = P(b.pid); p.dual = !!Number(b.on); }
   }
   function tagsView(p) {
     const x = p.x || {}, t = [];
-    if (exOn('tax') && x.tax) t.push(`<span title="Impuesto de comandante">Imp +${2 * x.tax}</span>`);
     if (exOn('energy') && x.energy) t.push(`<span title="Energía">Energía ${x.energy}</span>`);
     if (exOn('exp') && x.exp) t.push(`<span title="Experiencia">Exp ${x.exp}</span>`);
     if (exOn('monarch') && st.monarch === p.id) t.push('<span class="hold" title="Monarca">♛ Monarca</span>');
@@ -401,7 +406,7 @@
     const pass = ''; // «Pasar turno» va en grande en el centro de la mesa (centerPass)
     return `<section data-pid="${p.id}" class="lf-p c${i} ${rotd ? 'rot' : ''} ${myTurn ? 'turn' : ''} ${p.out ? 'out' : ''} ${isDead ? 'dying' : ''} ${art ? 'art' : ''}" ${art ? `style="--art:url('${art.replace(/'/g, '%27')}')"` : ''}>
       <div class="lf-in">
-        <header><b>${esc(p.name)}</b>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}${otTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}${tagsView(p)}</header>
+        <header><span class="lf-nm"><b>${esc(p.name)}</b>${taxBtn(p)}</span>${myTurn ? `<span class="lf-tts"><span class="lf-tt ${slowT() ? 'slow' : ''}">Vuelta ${st.turn.lap || 1} · <time data-tt>${mmss(Date.now() + skew - st.turn.at)}</time></span>${comboTag()}${otTag()}</span>` : p.deck ? `<small>${esc(p.deck)}</small>` : ''}${tagsView(p)}</header>
         ${p.out ? `<div class="lf-out"><b>Eliminado</b><span>${p.killer ? `por ${nm(p.killer)}` : esc(HOW[p.how] || '')}</span>${!st.done && mine() ? `<button data-revive="${p.id}">Deshacer</button>` : ''}</div>`
         : isDead ? `<div class="lf-kill"><b>¿Quién ha eliminado a ${esc(p.name)}?</b><div>${others.map(o => `<button data-kill="${p.id}" data-by="${o.id}">${esc(o.name)}</button>`).join('')}
             <button data-kill="${p.id}" data-by="" class="ghost">Se rinde</button></div><button data-alive="${p.id}" class="link">Aún sigue vivo</button></div>`
@@ -421,7 +426,10 @@
     const bt = (op, extra, d) => `<button data-op="${op}" ${extra} data-d="${d}" aria-label="${d > 0 ? 'Sumar' : 'Restar'} ${Math.abs(d)}">${d > 0 ? '+' : '−'}${Math.abs(d)}</button>`;
     const row = (label, op, extra, val, max) => `<div class="lf-row"><span>${label}</span>${bt(op, extra, -5)}${bt(op, extra, -1)}<b class="${val >= max ? 'lethal' : ''}">${val}</b>${bt(op, extra, 1)}${bt(op, extra, 5)}</div>`;
     return `<div class="lf-sheet" role="dialog" aria-label="Daño a ${esc(p.name)}"><div class="lf-sh-in"><h2>Daño que recibe ${esc(p.name)}</h2>
-      <h3>Daño de comandante (21 elimina)</h3>${st.players.filter(x => x.id !== p.id).map(o => row(`de ${esc(o.name)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}"`, p.cmd[o.id] || 0, 21)).join('')}
+      <h3>Daño de comandante (21 de un mismo comandante elimina)</h3>${st.players.filter(x => x.id !== p.id).map(o => dualOf(o)
+        ? cmdNames(o).map((cn, k) => row(`de ${esc(o.name)} · ${esc(cn)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}" data-slot="${k}"`, p.cmd[k ? `${o.id}b` : o.id] || 0, 21)).join('')
+        : row(`de ${esc(o.name)}`, 'cmd', `data-pid="${p.id}" data-from="${o.id}" data-slot="0"`, p.cmd[o.id] || 0, 21)).join('')}
+      ${st.players.filter(o => o.id !== p.id && !/\s\+\s/.test(o.deck || '')).length ? `<details class="lf-dual"><summary>¿Alguien juega con dos comandantes (compañeros)?</summary><div class="lf-turns">${st.players.filter(o => o.id !== p.id && !/\s\+\s/.test(o.deck || '')).map(o => `<button data-dual="${o.id}" class="${o.dual ? 'on' : ''}">${esc(o.name)}: ${o.dual ? 'dos' : 'uno'}</button>`).join('')}</div></details>` : ''}
       <h3>Veneno (10 elimina)</h3>${row('Contadores', 'poison', `data-pid="${p.id}"`, p.poison, 10)}
       ${['tax', 'energy', 'exp'].filter(exOn).map(k => `<h3>${EXK[k]}${k === 'tax' ? ` · cuesta +${2 * ((p.x || {}).tax || 0)}` : ''}</h3>${row(k === 'tax' ? 'Veces lanzado' : 'Contadores', 'extra', `data-pid="${p.id}" data-key="${k}"`, (p.x || {})[k] || 0, 999)}`).join('')}
       ${['monarch', 'init'].filter(exOn).map(k => `<h3>${HOLD[k]}</h3><div class="lf-turns">${st[k] === p.id ? `<button class="on" data-holder="${k}" data-hp="">${esc(p.name)} lo tiene · quitar</button>` : `<button data-holder="${k}" data-hp="${p.id}">Dárselo a ${esc(p.name)}</button>`}</div>`).join('')}
@@ -759,6 +767,8 @@
       const on = [...root.querySelectorAll('[data-exk]')].filter(x => x.checked).map(x => x.dataset.exk).join(',');
       const b = { op: 'extras', on }; act(b, () => mut(b));
     }; });
+    on('[data-tax]', b => { const p = st.players.find(x => x.id === Number(b.dataset.tax)); const x = { op: 'extra', pid: p.id, key: 'tax', d: 1, rd: 1 }; mut(x); act(x); if (navigator.vibrate) navigator.vibrate(10); });
+    on('[data-dual]', b => { const p = st.players.find(x => x.id === Number(b.dataset.dual)); const x = { op: 'dual', pid: p.id, on: p.dual ? 0 : 1 }; act(x, () => mut(x)); });
     on('[data-holder]', b => { const x = { op: 'holder', key: b.dataset.holder, pid: b.dataset.hp }; act(x, () => mut(x)); });
     on('[data-daynight]', () => { const x = { op: 'day', v: st.day === 'day' ? 'night' : 'day' }; act(x, () => mut(x)); });
     on('[data-dice]', () => { menu = false; dice = { v: '—' }; render(); });
@@ -793,12 +803,12 @@
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => { b.onclick = () => {
       const p = st.players.find(x => x.id === Number(b.dataset.pid)), d = Number(b.dataset.d);
       if (b.dataset.op === 'extra') { const x = { op: 'extra', pid: p.id, key: b.dataset.key, d }; const o = (p.x || {})[x.key] || 0; mut(x); x.rd = ((p.x || {})[x.key] || 0) - o; act(x); }
-      else if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), cur = p.cmd[f] || 0, nv = Math.max(0, cur + d); p.cmd[f] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, d, rd: nv - cur }); }
+      else if (b.dataset.op === 'cmd') { const f = Number(b.dataset.from), slot = Number(b.dataset.slot) || 0, k = slot ? `${f}b` : f, cur = p.cmd[k] || 0, nv = Math.max(0, cur + d); p.cmd[k] = nv; p.life -= nv - cur; act({ op: 'cmd', pid: p.id, from: f, slot, d, rd: nv - cur }); }
       else { const o = p.poison; p.poison = Math.max(0, p.poison + d); act({ op: 'poison', pid: p.id, d, rd: p.poison - o }); }
       if (navigator.vibrate) navigator.vibrate(6);
     }; });
     on('[data-kill]', b => { const pid = Number(b.dataset.kill), by = b.dataset.by; const p = st.players.find(x => x.id === pid);
-      const how = b.dataset.how === 'desempate' ? 'desempate' : !by ? 'concede' : (p.cmd[by] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
+      const how = b.dataset.how === 'desempate' ? 'desempate' : !by ? 'concede' : Math.max(p.cmd[by] || 0, p.cmd[`${by}b`] || 0) >= 21 ? 'comandante' : p.poison >= 10 ? 'veneno' : 'dano';
       act({ op: 'kill', pid, killer: by, how }, () => { p.out = true; p.killer = by ? Number(by) : null; p.how = how; p.ord = st.players.filter(x => x.out).length; }); });
     on('[data-kill-open]', b => { const p = st.players.find(x => x.id === Number(b.dataset.killOpen)); dismissed.delete(p.id); if (p.life > 0) p.life = 0; render(); });
     on('[data-alive]', b => { dismissed.add(Number(b.dataset.alive)); load(true); render(); });

@@ -107,7 +107,7 @@ function nightSummary(eventId) {
       const ms = st.done.at - st.startedAt;
       if (!longest || ms > longest.ms) longest = { ms, table: pd.tn, round: pd.rn, players: st.players.map(p => p.name) };
     }
-    for (const p of st.players) for (const [from, v] of Object.entries(p.cmd || {})) cmdDmg.set(Number(from), (cmdDmg.get(Number(from)) || 0) + v);
+    for (const p of st.players) for (const [from, v] of Object.entries(p.cmd || {})) { const f = parseInt(from, 10); cmdDmg.set(f, (cmdDmg.get(f) || 0) + v); }
     if (st.done) {
       const w = st.players.find(p => p.id === st.done.winner);
       if (w && w.life <= 10 && (!comeback || w.life < comeback.life)) comeback = { name: w.name, life: w.life, table: pd.tn, round: pd.rn };
