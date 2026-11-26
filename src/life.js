@@ -34,7 +34,8 @@ addColumn('cmd_events', 'combo_seat', 'INTEGER');
 addColumn('cmd_events', 'combo_label', 'TEXT');
 db.prepare("UPDATE cmd_events SET combo_lap = CASE WHEN combo_lap = 6 THEN 5 ELSE combo_lap END, combo_seat = 3 WHERE combo_seat IS NULL").run();
 addColumn('cmd_events', 'turn_warn', 'INTEGER DEFAULT 5');
-addColumn('cmd_events', 'extra_turns', 'INTEGER DEFAULT 5'); // turnos extra cuando se acaba el tiempo de ronda (0 = no contar)
+addColumn('cmd_events', 'extra_turns', 'INTEGER DEFAULT 5');
+addColumn('cmd_events', 'time_mode', 'TEXT'); // al acabar el tiempo: 'lap' (terminar la vuelta y muerte súbita, por defecto) o 'extra' (turnos extra) // turnos extra cuando se acaba el tiempo de ronda (0 = no contar)
 // Llamadas a juez desde el contador
 db.exec(`CREATE TABLE IF NOT EXISTS cmd_judge_calls (id INTEGER PRIMARY KEY, event_id INTEGER NOT NULL, pod_id INTEGER NOT NULL, by_id INTEGER, note TEXT,
   at TEXT DEFAULT (datetime('now')), resolved_at TEXT, resolved_by TEXT)`);
@@ -71,7 +72,7 @@ function load(eventId, podId, create = true) {
 function view(eventId, podId) {
   const x = load(eventId, podId);
   return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 5, comboSeat: x.ev.combo_seat || 1, comboLabel: x.ev.combo_label || 'Combos de 3 o más cartas', turnWarn: x.ev.turn_warn ?? 5,
-    extraTurns: x.ev.extra_turns ?? 5, judge: judgeOpen(podId) };
+    extraTurns: x.ev.extra_turns ?? 5, timeMode: x.ev.time_mode || 'lap', judge: judgeOpen(podId) };
 }
 const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
 const HOLD = { monarch: 'el Monarca', init: 'la Iniciativa' };
@@ -259,7 +260,12 @@ function apply(eventId, podId, byId, body) {
       case 'day': state.day = ['day', 'night'].includes(body.v) ? body.v : null; log(state.day === 'day' ? 'Es de día' : state.day === 'night' ? 'Es de noche' : 'Sin día/noche'); break;
       case 'extras': state.ex = String(body.on || '').split(',').filter(k => EXK[k] || HOLD[k] || k === 'day'); break;
       // Muerte súbita (desempate por tiempo): cualquier daño de un rival elimina; perder vidas por uno mismo no
-      case 'sudden': state.sudden = !!Number(body.on); log(state.sudden ? 'Muerte súbita' : 'Fin de la muerte súbita'); break;
+      case 'sudden':
+        state.sudden = !!Number(body.on);
+        // Al acabar el tiempo y terminar la vuelta: muerte súbita y se vuelve a elegir quién empieza
+        if (state.sudden && Number(body.newturn)) { state.turn = null; state.ot = null; }
+        log(state.sudden ? (Number(body.newturn) ? 'Muerte súbita: se vuelve a elegir quién empieza' : 'Muerte súbita') : 'Fin de la muerte súbita');
+        break;
       case 'art': {
         const p = P(body.pid);
         if (p.id !== byId) throw new LifeError('Cada jugador cambia solo su propio fondo');

@@ -128,7 +128,8 @@ function eventForm(ev, action) {
       <p class="small muted">Los jugadores abren el contador desde su mesa en el móvil: llevan vidas, daño de comandante y veneno, y al eliminar a alguien anotan quién lo ha hecho. Al quedar uno, envía el resultado con los puestos.</p>
       <label>Vidas iniciales<select name="life_start">${[40, 30, 25, 20].map(n => html`<option value="${n}" ${(ev.life_start || 40) === n ? 'selected' : ''}>${n}</option>`)}</select></label>
       <label class="check-inline"><input type="checkbox" name="life_auto" value="1" ${ev.life_auto ? 'checked' : ''}> Los resultados del contador se anotan solos, sin confirmarlos la tienda</label>
-      <label>Turnos extra al acabar el tiempo<select name="extra_turns">${[[5, '5 turnos'], [3, '3 turnos'], [4, '4 turnos'], [6, '6 turnos'], [0, 'No contar']].map(([n, t]) => html`<option value="${n}" ${(ev.extra_turns ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
+      <label>Al acabar el tiempo de ronda<select name="time_mode"><option value="lap" ${(ev.time_mode || 'lap') === 'lap' ? 'selected' : ''}>Se termina la vuelta y muerte súbita</option><option value="extra" ${ev.time_mode === 'extra' ? 'selected' : ''}>Turnos extra</option></select></label>
+      <label>Turnos extra (si se eligen)<select name="extra_turns">${[[5, '5 turnos'], [3, '3 turnos'], [4, '4 turnos'], [6, '6 turnos'], [0, 'No contar']].map(([n, t]) => html`<option value="${n}" ${(ev.extra_turns ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Avisar de un turno largo<select name="turn_warn">${[[5, 'A los 5 minutos'], [3, 'A los 3 minutos'], [4, 'A los 4 minutos'], [6, 'A los 6 minutos'], [8, 'A los 8 minutos'], [10, 'A los 10 minutos'], [0, 'No avisar']].map(([n, t]) => html`<option value="${n}" ${(ev.turn_warn ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <label>Qué combos se limitan (lo que verán en el contador)<input name="combo_label" maxlength="60" value="${ev.combo_label || 'Combos de 3 o más cartas'}"></label>
       <label>Permitidos desde el turno<select name="combo_lap">${[[5, 'Turno 5'], [3, 'Turno 3'], [4, 'Turno 4'], [6, 'Turno 6'], [7, 'Turno 7'], [8, 'Turno 8'], [0, 'Sin límite']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_lap ?? 5) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
@@ -159,6 +160,7 @@ function saveLife(id, b) {
   require('../life');
   db.prepare('UPDATE cmd_events SET avoid_regulars = ?, balance_bracket = ? WHERE id = ?').run(b.avoid_regulars ? 1 : 0, b.balance_bracket ? 1 : 0, id);
   db.prepare('UPDATE cmd_events SET extra_turns = ? WHERE id = ?').run(b.extra_turns == null ? 5 : Math.min(Math.max(Number(b.extra_turns) || 0, 0), 10), id);
+  db.prepare('UPDATE cmd_events SET time_mode = ? WHERE id = ?').run(b.time_mode === 'extra' ? 'extra' : 'lap', id);
   db.prepare('UPDATE cmd_events SET combo_seat = ?, combo_label = ? WHERE id = ?').run(Math.min(Math.max(Number(b.combo_seat) || 1, 1), 6), String(b.combo_label || '').trim().slice(0, 60) || null, id);
   db.prepare('UPDATE cmd_events SET life_auto = ?, life_start = ?, combo_lap = ?, turn_warn = ? WHERE id = ?').run(b.life_auto ? 1 : 0, [20, 25, 30, 40].includes(Number(b.life_start)) ? Number(b.life_start) : 40, b.combo_lap == null ? 5 : Math.min(Math.max(Number(b.combo_lap) || 0, 0), 20), b.turn_warn == null ? 5 : Math.min(Math.max(Number(b.turn_warn) || 0, 0), 30), id);
 }

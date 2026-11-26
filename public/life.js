@@ -499,13 +499,20 @@
     tick();
   }
   // Turnos extra cuando se acaba el tiempo de ronda (solo torneo)
+  // Modo «vuelta» (por defecto): al acabar el tiempo se termina la vuelta; con el último jugador de la vuelta se puede pasar a muerte súbita
+  const timeOver = () => { const c = clockTxt(); return !!(c && c.over); };
+  const lapDone = () => !st.turn || st.players.filter(p => !p.out).every(p => (st.turn.played || [st.turn.pid]).includes(p.id));
+  const lapMode = () => !CAS && (info.timeMode || 'lap') === 'lap';
   function otInfo() {
+    if (lapMode()) return null;
     if (CAS || !info.extraTurns || !st.turn) return null;
     const c = clockTxt();
     if (st.ot) { const k = st.turn.n - st.ot.base; return { k, of: info.extraTurns, over: k > info.extraTurns }; }
     return c && c.over ? { k: 0, of: info.extraTurns } : null;
   }
-  const otTag = () => { const o = otInfo(); if (!o) return '';
+  const otTag = () => {
+    if (lapMode()) return timeOver() && !st.sudden && st.turn ? `<span class="lf-combo ${lapDone() ? 'no' : 'ot'}">${lapDone() ? 'Último turno de la vuelta: después, muerte súbita' : 'Tiempo: terminad la vuelta'}</span>` : '';
+    const o = otInfo(); if (!o) return '';
     return `<span class="lf-combo ${o.over ? 'no' : 'ot'}">${o.k === 0 ? `Tiempo: acaba este turno y quedan ${o.of} extra` : o.over ? 'Sin turnos extra: se acaba la partida' : `Turno extra ${o.k} de ${o.of}`}</span>`; };
   // Tarjeta para compartir el resultado
   async function shareCard() {
@@ -639,7 +646,7 @@
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${lapMode() && canPlay && timeOver() && !st.sudden ? `<button data-sudden="1" data-newturn="1" class="hot" ${lapDone() ? '' : 'disabled title="Se puede cuando juegue el último de la vuelta"'}>Muerte súbita</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
       ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button><button data-exsheet>Contadores extra</button><button data-dice>Dados y moneda</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? `<button data-new>Cambiar jugadores</button>${room ? '<button data-roomsh>Compartir partida (código)</button>' : '<button data-share-room>Compartir con otros móviles</button>'}` : '<button data-whoami>Cambiar quién soy</button>'}
@@ -706,8 +713,9 @@
       ? ask('¿Cómo quieres reiniciar?', `Mismos jugadores (${st.start} vidas)`, () => act({ op: 'reset' }), { label: 'Partida nueva (elegir jugadores y vidas)', fn: newGame })
       : ask('¿Reiniciar el contador de esta mesa? Se borran vidas y eliminaciones.', 'Reiniciar', () => act({ op: 'reset' }))));
     on('[data-reopen]', () => { menu = false; act({ op: 'reopen' }); });
-    on('[data-sudden]', b => { const on = b.dataset.sudden === '1'; const go = () => act({ op: 'sudden', on: on ? 1 : 0 }, () => { st.sudden = on; });
-      if (on) ask('¿Pasar a muerte súbita? El primer daño de un rival elimina.', 'Muerte súbita', go); else { menu = false; go(); } });
+    on('[data-sudden]', b => { const on = b.dataset.sudden === '1', nt = b.dataset.newturn === '1';
+      const go = () => act({ op: 'sudden', on: on ? 1 : 0, newturn: nt ? 1 : 0 }, () => { st.sudden = on; if (nt) { st.turn = null; turnSheet = true; } });
+      if (on) ask(nt ? '¿Empezar la muerte súbita? El primer daño de un rival elimina y se vuelve a elegir quién empieza.' : '¿Pasar a muerte súbita? El primer daño de un rival elimina.', 'Muerte súbita', go); else { menu = false; go(); } });
     on('[data-finish]', () => act({ op: 'finish' }));
     on('[data-rematch]', () => act({ op: 'reset' }));
     on('[data-new]', () => ask('¿Empezar otra partida con otros jugadores? Se borra la actual.', 'Cambiar jugadores', newGame));

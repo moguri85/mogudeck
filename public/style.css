@@ -1701,3 +1701,4 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .tv-flash b { font: 800 14vh/1 var(--display, var(--font)); color: #000; text-align: center; transform: scale(.8); transition: transform .5s cubic-bezier(.2, 1.4, .4, 1); }
 .tv-flash.over b { color: #fff; } .tv-flash.on { opacity: 1; } .tv-flash.on b { transform: scale(1); }
 @media (prefers-reduced-motion: reduce) { .tv-judge.on { animation: none; } .tv-flash b { transition: none; } }
+.lf-bar button:disabled { opacity: .45; cursor: not-allowed; }
