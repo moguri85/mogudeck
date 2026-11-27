@@ -323,7 +323,10 @@ r.get('/jugador/:key', (req, res) => {
     <div class="phead"><div class="avatar">${p.name.slice(0, 1).toUpperCase()}</div>
       <div><h1>${p.name}</h1>${feature('badges') ? require('./comunidad').featuredChips(p.key) : ''}<p class="muted">${p.games.map(g => html`<span class="gchip" style="--g:${melee.gameInfo(g.game).color}"><i></i>${gName(g.game)}</span> `)}</p></div></div>
     <div class="ptiles"><div><b>${p.events}</b><span>eventos</span></div><div><b>${p.titles}</b><span>torneos ganados</span></div>
-      <div><b>${p.top3}</b><span>podios</span></div><div><b>${p.w}-${p.l}-${p.d}</b><span>V-D-E</span></div><div><b>${pct}%</b><span>victorias</span></div></div>
+      <div><b>${p.top3}</b><span>podios</span></div><div><b>${p.w}-${p.l}-${p.d}</b><span>V-D-E</span></div><div><b>${pct}%</b><span>victorias</span></div>
+      ${(() => { const lo = feature('badges') ? (require('../badges').of(p.key).loyalty || null) : null; if (!lo || !lo.since) return '';
+        const since = new Date(lo.since + 'T12:00:00').toLocaleDateString('es-ES', { month: 'short', year: 'numeric' });
+        return html`<div><b>${since}</b><span>jugando en la tienda</span></div>${lo.weekStreak >= 2 ? html`<div><b>${lo.weekStreak}</b><span>semanas seguidas</span></div>` : ''}`; })()}</div>
     ${(() => { if (!feature('badges')) return ''; const CM = require('./comunidad'); const st = require('../badges').of(p.key); return html`<section><div class="sec-row"><h2 class="sec">Nivel e insignias</h2><a class="small" href="/logros">Cómo funciona</a></div>
       ${CM.levelCard(st)}${CM.specialGrid(st.specials || [])}${st.earned ? CM.badgeGrid(st, { all: false }) : (st.specials || []).length ? '' : html`<p class="muted small">Aún sin insignias.</p>`}</section>`; })()}
     ${(() => {
@@ -907,7 +910,7 @@ r.get('/tv.json', (req, res) => {
     now: new Date().toISOString(),
     live: liveOut,
     upcoming,
-    bounties: bnt.filter(b => b.status === 'active').slice(0, 3).map(b => ({ id: b.id, name: people.publicName(b.person_key), reward: b.reward, note: b.note })),
+    bounties: bnt.filter(b => b.status === 'active').slice(0, 3).map(b => ({ id: b.id, name: people.publicName(b.person_key), reward: b.reward, note: b.note, how: b.how })),
     claimed: bnt.filter(b => ['claimed', 'delivered'].includes(b.status) && b.claimed_at && Date.now() - new Date(b.claimed_at.replace(' ', 'T') + 'Z') < 3 * 3600e3)
       .map(b => ({ id: b.id, winner: people.publicName(b.claimed_key), target: people.publicName(b.person_key), reward: b.reward })),
     moments,

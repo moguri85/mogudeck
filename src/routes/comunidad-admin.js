@@ -13,7 +13,7 @@ const r = express.Router();
 const send = (res, body) => res.send(String(body));
 const back = (res, url, msg, err = false) => { const [u, h] = String(url).split('#'); res.redirect(u + (u.includes('?') ? '&' : '?') + (err ? 'err=' : 'ok=') + encodeURIComponent(msg) + (h ? '#' + h : '')); };
 const gShort = g => (g === 'commander' ? 'Commander' : melee.gameInfo(g).short);
-const STB = { active: 'Activa', claimed: 'Cobrada · falta entregar', delivered: 'Entregada', cancelled: 'Cancelada' };
+const STB = { pending: 'La propone un jugador', active: 'Activa', claimed: 'Cobrada · falta entregar', delivered: 'Entregada', cancelled: 'Cancelada', expired: 'Caducada' };
 
 r.get('/comunidad', (req, res) => {
   const bs = feature('bounties') ? K.bounties() : [];
@@ -43,7 +43,7 @@ r.get('/comunidad', (req, res) => {
     </section>` : ''}
 
     ${feature('bounties') ? html`<section class="panel" id="recompensas"><h2>Recompensas («Se busca»)</h2>
-      <p class="small muted">Elige a un jugador y qué gana quien le derrote. Se cobra sola la primera vez que alguien le gane una partida (o una mesa de Commander) en un torneo de la tienda desde hoy. Sale en la web, en la TV y en su perfil.</p>
+      <p class="small muted">Elige a un jugador y qué gana quien le derrote. Se cobra sola en cuanto se cumple en un torneo de la tienda: ganarle una partida o mesa, eliminarle en el contador de vidas o ganarle varias veces. Puede ser solo para un cazador concreto y caducar. Los jugadores también pueden proponer cazas: salen aquí para aprobarlas. Sale en la web, en la TV y en su perfil.</p>
       ${sug.length ? html`<p><b>Sugerencias:</b> ${sug.map(s => html`<form method="post" action="/admin/comunidad/recompensa" class="inline sugb"><input type="hidden" name="person_key" value="${s.key}"><input type="hidden" name="reward" value="Un sobre">
         <button class="btn small ghost" title="${s.why}">${s.name} <small>(${s.why})</small></button></form>`)}</p>` : ''}
       <form method="post" action="/admin/comunidad/recompensa" class="grid2">
@@ -51,12 +51,17 @@ r.get('/comunidad', (req, res) => {
         <label>Recompensa<input name="reward" placeholder="Un sobre, una funda, 5 € en tienda…" maxlength="80" required></label>
         <label>Nota (opcional)<input name="note" maxlength="200" placeholder="Invicto en las 3 últimas semanas"></label>
         <label>Solo en<select name="game"><option value="">Cualquier juego</option>${games.map(g => html`<option value="${g}">${gShort(g)}</option>`)}<option value="commander">Commander</option></select></label>
+        <label>Cómo se cobra<select name="kind">${Object.entries(K.BKIND).map(([k, t]) => html`<option value="${k}">${t}</option>`)}</select></label>
+        <label>Veces (si es «varias veces»)<select name="times">${[2, 3, 4, 5].map(n => html`<option>${n}</option>`)}</select></label>
+        <label>Solo para este cazador (opcional)<span class="ppick"><input class="person-pick" data-field="hunter_key" name="hunter_label" placeholder="Cualquiera" autocomplete="off"><input type="hidden" name="hunter_key"></span></label>
+        <label>Caduca<select name="days"><option value="0">No caduca</option><option value="7">En 1 semana</option><option value="14">En 2 semanas</option><option value="30">En 1 mes</option></select></label>
         <div class="full"><button class="btn">Poner recompensa</button></div></form>
       ${bs.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Se busca</th><th>Recompensa</th><th>Estado</th><th>Cobrada por</th><th></th></tr></thead><tbody>
         ${bs.map(b => html`<tr class="${b.status === 'cancelled' ? 'dim' : ''}"><td><a href="/admin/jugadores/${encodeURIComponent(b.person_key)}">${people.publicName(b.person_key)}</a>${b.game ? html` <small class="muted">${gShort(b.game)}</small>` : ''}<br><small class="muted">desde ${fmtDay(b.created_at)}</small></td>
-          <td>${b.reward}${b.note ? html`<br><small class="muted">${b.note}</small>` : ''}</td><td><span class="pill ${b.status === 'claimed' ? 'warn' : b.status === 'active' ? 'new' : ''}">${STB[b.status]}</span></td>
+          <td>${b.reward}${b.note ? html`<br><small class="muted">${b.note}</small>` : ''}<br><small class="muted">${b.how}${b.poster_account ? html` · la propone ${K.accName(require("../accounts").get(b.poster_account))}` : ''}</small></td><td><span class="pill ${b.status === 'claimed' ? 'warn' : b.status === 'active' ? 'new' : ''}">${STB[b.status]}</span></td>
           <td>${b.claimed_key ? html`<a href="/admin/jugadores/${encodeURIComponent(b.claimed_key)}">${people.publicName(b.claimed_key)}</a><br><small class="muted">${b.claimed_event || ''}</small>` : ''}</td>
           <td class="nowrap">${b.status === 'claimed' ? html`<form method="post" action="/admin/comunidad/recompensa/${b.id}/delivered" class="inline"><button class="btn small">Entregada</button></form>` : ''}
+            ${b.status === 'pending' ? html`<form method="post" action="/admin/comunidad/recompensa/${b.id}/approve" class="inline"><button class="btn small">Aprobar</button></form><form method="post" action="/admin/comunidad/recompensa/${b.id}/cancelled" class="inline"><button class="link danger">Rechazar</button></form>` : ''}
             ${b.status === 'active' ? html`<form method="post" action="/admin/comunidad/recompensa/${b.id}/cancelled" class="inline" onsubmit="return confirm('¿Cancelar la recompensa?')"><button class="link danger">Cancelar</button></form>` : ''}
             ${b.status === 'claimed' ? html`<form method="post" action="/admin/comunidad/recompensa/${b.id}/active" class="inline"><button class="link">No vale, reactivar</button></form>` : ''}</td></tr>`)}</tbody></table></div>` : ''}
     </section>` : ''}
@@ -105,10 +110,10 @@ r.post('/comunidad/recompensa', (req, res) => {
   catch (e) { back(res, '/admin/comunidad#recompensas', e.message, true); }
 });
 r.post('/comunidad/recompensa/:id/:st', (req, res) => {
-  const st = ['delivered', 'cancelled', 'active'].includes(req.params.st) ? req.params.st : null;
+  const st = ['delivered', 'cancelled', 'active', 'approve'].includes(req.params.st) ? req.params.st : null;
   if (st) K.setBounty(Number(req.params.id), st);
   badges.invalidate();
-  back(res, '/admin/comunidad#recompensas', { delivered: 'Marcada como entregada', cancelled: 'Recompensa cancelada', active: 'Reactivada' }[st] || 'Nada');
+  back(res, '/admin/comunidad#recompensas', { delivered: 'Marcada como entregada', cancelled: 'Recompensa cancelada', active: 'Reactivada', approve: 'Caza aprobada: ya está activa' }[st] || 'Nada');
 });
 r.post('/comunidad/momento/:id/:st', (req, res) => {
   const st = ['approved', 'rejected', 'delete'].includes(req.params.st) ? req.params.st : null;

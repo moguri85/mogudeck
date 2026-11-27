@@ -55,34 +55,77 @@ const day = s => String(s || '').slice(0, 10);
 const ts = s => { if (!s) return 0; const v = /^\d{4}-\d\d-\d\d \d/.test(s) ? Date.parse(s.replace(' ', 'T') + 'Z') : Date.parse(s); return Number.isFinite(v) ? v : 0; };
 
 // ======================= Recompensas =======================
+// Tipos: «beat» ganarle una partida o mesa, «kill» eliminarle tú en el contador de vidas (Commander), «times» ganarle N veces.
+// Puede ser solo para un cazador concreto (hunter_key), caducar (expires_at) y ponerla un jugador (poster_account, la revisa la tienda)
+addColumn('bounties', 'kind', "TEXT DEFAULT 'beat'");
+addColumn('bounties', 'times', 'INTEGER DEFAULT 1');
+addColumn('bounties', 'hunter_key', 'TEXT');
+addColumn('bounties', 'expires_at', 'TEXT');
+addColumn('bounties', 'poster_account', 'INTEGER');
+const BKIND = { beat: 'Gánale una partida o una mesa', kill: 'Elimínale tú en una mesa de Commander (contador de vidas)', times: 'Gánale varias veces' };
+function bountyHow(b) {
+  const people = require('./people');
+  const parts = [b.kind === 'times' ? `Gánale ${b.times || 2} veces` : BKIND[b.kind || 'beat'] || BKIND.beat];
+  if (b.hunter_key) parts.push(`solo la puede cobrar ${people.publicName(b.hunter_key)}`);
+  if (b.expires_at) parts.push(`hasta el ${new Date(b.expires_at.replace(' ', 'T') + 'Z').toLocaleDateString('es-ES', { day: 'numeric', month: 'short' })}`);
+  return parts.join(' · ');
+}
 function bounties({ status } = {}) {
   check();
-  const rows = db.prepare(`SELECT * FROM bounties ${status ? 'WHERE status = ?' : ''} ORDER BY CASE status WHEN 'active' THEN 0 WHEN 'claimed' THEN 1 ELSE 2 END, id DESC`).all(...(status ? [status] : []));
-  return rows;
+  const rows = db.prepare(`SELECT * FROM bounties ${status ? 'WHERE status = ?' : ''} ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'active' THEN 1 WHEN 'claimed' THEN 2 ELSE 3 END, id DESC`).all(...(status ? [status] : []));
+  return rows.map(b => ({ ...b, how: bountyHow(b) }));
 }
-function addBounty({ person_key, reward, note, game }, by) {
+function addBounty({ person_key, reward, note, game, kind, times, hunter_key, days }, by, { posterAccount = null } = {}) {
   const key = I.resolve(String(person_key || ''));
   if (!key) throw new Error('Elige a un jugador');
   if (!String(reward || '').trim()) throw new Error('Pon la recompensa (p. ej. «un sobre»)');
-  if (db.prepare("SELECT 1 FROM bounties WHERE person_key = ? AND status = 'active'").get(key)) throw new Error('Ese jugador ya tiene una recompensa activa');
+  const k = BKIND[kind] ? kind : 'beat';
+  const hunter = hunter_key ? I.resolve(String(hunter_key)) : null;
+  if (hunter && hunter === key) throw new Error('El cazador no puede ser la misma persona');
+  if (posterAccount) {
+    const acc = require('./accounts').get(posterAccount);
+    if (acc && require('./accounts').personKey(acc) === key) throw new Error('No puedes poner precio a tu propia cabeza');
+    if (db.prepare("SELECT COUNT(*) c FROM bounties WHERE poster_account = ? AND status IN ('pending','active')").get(posterAccount).c >= 3) throw new Error('Ya tienes 3 cazas abiertas');
+  }
+  const d = Math.min(Math.max(Number(days) || 0, 0), 90);
   rivals.invalidate();
-  return db.prepare('INSERT INTO bounties (person_key, reward, note, game, created_by) VALUES (?, ?, ?, ?, ?)')
-    .run(key, String(reward).trim().slice(0, 80), String(note || '').trim().slice(0, 200) || null, game || null, by || null).lastInsertRowid;
+  return db.prepare(`INSERT INTO bounties (person_key, reward, note, game, created_by, kind, times, hunter_key, expires_at, poster_account, status)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ${d ? `datetime('now', '+${d} days')` : 'NULL'}, ?, ?)`)
+    .run(key, String(reward).trim().slice(0, 80), String(note || '').trim().slice(0, 200) || null, (k === 'kill' ? 'commander' : game) || null, by || null,
+      k, k === 'times' ? Math.min(Math.max(Number(times) || 2, 2), 10) : 1, hunter, posterAccount, posterAccount ? 'pending' : 'active').lastInsertRowid;
 }
 function setBounty(id, status) {
   if (status === 'delivered') db.prepare("UPDATE bounties SET status = 'delivered', delivered_at = datetime('now') WHERE id = ?").run(id);
   else if (status === 'cancelled') db.prepare("UPDATE bounties SET status = 'cancelled' WHERE id = ?").run(id);
+  else if (status === 'approve') db.prepare("UPDATE bounties SET status = 'active', created_at = datetime('now') WHERE id = ? AND status = 'pending'").run(id);
   else if (status === 'active') db.prepare("UPDATE bounties SET status = 'active', claimed_key = NULL, claimed_at = NULL, claimed_event = NULL, claimed_href = NULL WHERE id = ?").run(id);
 }
-// Se cobra la primera vez que alguien le gana desde que se puso (partida 1 contra 1, o mesa de Commander ganada)
+// Se cobra la primera vez que se cumple desde que se puso (partida 1 contra 1, mesa de Commander ganada, eliminación en el contador…)
 function check() {
+  const claim = (b, key, ev, href) => db.prepare("UPDATE bounties SET status = 'claimed', claimed_key = ?, claimed_at = datetime('now'), claimed_event = ?, claimed_href = ? WHERE id = ?").run(key, ev, href, b.id);
+  db.prepare("UPDATE bounties SET status = 'expired' WHERE status = 'active' AND expires_at IS NOT NULL AND expires_at < datetime('now')").run();
+  let killList = null;
   for (const b of db.prepare("SELECT * FROM bounties WHERE status = 'active'").all()) {
-    const lost = rivals.of(b.person_key)
-      .filter(e => e.r === 'L' && ts(e.at || e.date) >= ts(b.created_at) && (!b.game || e.game === b.game))
-      .sort((x, y) => ts(x.at || x.date) - ts(y.at || y.date) || (x.round || 0) - (y.round || 0))[0];
-    if (lost) {
-      db.prepare("UPDATE bounties SET status = 'claimed', claimed_key = ?, claimed_at = datetime('now'), claimed_event = ?, claimed_href = ? WHERE id = ?")
-        .run(lost.opp, `${lost.event}${lost.round ? ` · ronda ${lost.round}` : ''}`, lost.href, b.id);
+    const okHunter = k => !b.hunter_key || I.resolve(b.hunter_key) === k;
+    if (b.kind === 'kill') {
+      if (!killList) {
+        const people = require('./people'); const idx = people.nameIndex();
+        killList = db.prepare(`SELECT k.at, k.pod_id, v.name vn, v.username vu, v.person_key vp, kk.name kn, kk.username ku, kk.person_key kp, e.id eid, e.name ename, rd.number rn
+          FROM cmd_kills k JOIN cmd_players v ON v.id = k.victim_id JOIN cmd_players kk ON kk.id = k.killer_id JOIN cmd_pods pd ON pd.id = k.pod_id JOIN cmd_rounds rd ON rd.id = pd.round_id JOIN cmd_events e ON e.id = rd.event_id
+          WHERE e.public = 1 ORDER BY k.at`).all().map(r => ({ at: r.at, victim: people.cmdKey({ name: r.vn, username: r.vu, person_key: r.vp }, idx), killer: people.cmdKey({ name: r.kn, username: r.ku, person_key: r.kp }, idx), event: `${r.ename} · ronda ${r.rn}`, href: `/commander/${r.eid}` }));
+      }
+      const hit = killList.find(k => k.victim === b.person_key && ts(k.at) >= ts(b.created_at) && okHunter(k.killer));
+      if (hit) claim(b, hit.killer, hit.event, hit.href);
+      continue;
+    }
+    const losses = rivals.of(b.person_key)
+      .filter(e => e.r === 'L' && ts(e.at || e.date) >= ts(b.created_at) && (!b.game || e.game === b.game) && okHunter(e.opp))
+      .sort((x, y) => ts(x.at || x.date) - ts(y.at || y.date) || (x.round || 0) - (y.round || 0));
+    const need = b.kind === 'times' ? Math.max(2, b.times || 2) : 1;
+    const count = new Map();
+    for (const l of losses) {
+      count.set(l.opp, (count.get(l.opp) || 0) + 1);
+      if (count.get(l.opp) >= need) { claim(b, l.opp, `${l.event}${l.round ? ` · ronda ${l.round}` : ''}`, l.href); break; }
     }
   }
 }
@@ -90,7 +133,13 @@ function check() {
 function bountySuggestions() {
   const people = require('./people');
   const out = [];
-  const active = new Set(db.prepare("SELECT person_key FROM bounties WHERE status = 'active'").all().map(r => r.person_key));
+  const active = new Set(db.prepare("SELECT person_key FROM bounties WHERE status IN ('active','pending')").all().map(r => r.person_key));
+  // El líder del ranking de experiencia y quien lleva la mejor racha
+  try {
+    const B = require('./badges');
+    const lead = B.leaderboard(1)[0];
+    if (lead && !active.has(lead.key)) out.push({ key: lead.key, name: lead.name, why: 'Líder del ranking de experiencia', game: null });
+  } catch (e) { /* sin ranking */ }
   for (const t of data.recentTournaments(8)) {
     if (day(t.start_date || t.last_pair) < day(new Date(Date.now() - 14 * 864e5).toISOString())) continue;
     const st = data.standings(t.id, true)[0];
@@ -412,7 +461,7 @@ function metaPrice(days = 30) {
 }
 
 module.exports = {
-  accName, bounties, addBounty, setBounty, checkBounties: check, bountySuggestions,
+  accName, bounties, addBounty, setBounty, checkBounties: check, bountySuggestions, bountyHow, BKIND,
   porraBoard, predict, resolvePredictions, porraRanking, porraStats, PTS,
   TRADE_GAMES, tradeGame, addTrades, myTrades, delTrade, clearTrades, tradeMatches, tradeBrowse, tradeCount, parseCardLines,
   loanStatus, addLoanDeck, removeLoanDeck, loanDecks, loanDeck, requestLoan, loanAction, myLoans, loanPending,

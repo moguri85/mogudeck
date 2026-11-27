@@ -11,6 +11,14 @@ const BADGES = [
   { id: 'racha', name: 'En racha', desc: 'Victorias seguidas (mejor racha)', tiers: [3, 5, 8], unit: 'seguidas' },
   { id: 'sociable', name: 'Sociable', desc: 'Rivales distintos', tiers: [10, 30, 60], unit: 'rivales' },
   { id: 'fiel', name: 'Fiel', desc: 'Semanas seguidas jugando en la tienda', tiers: [3, 6, 12], unit: 'semanas' },
+  // Fidelidad: volver, venir cada mes, cumplir años en la tienda
+  { id: 'constante', name: 'Constante', desc: 'Meses seguidos jugando en la tienda (mejor racha)', tiers: [3, 6, 12], unit: 'meses' },
+  { id: 'mesames', name: 'Mes a mes', desc: 'Meses distintos con algún torneo en la tienda', tiers: [6, 12, 24], unit: 'meses' },
+  { id: 'aniversario', name: 'Aniversario', desc: 'Años desde tu primer torneo en la tienda (y sigues viniendo)', tiers: [1, 2, 3], unit: 'años' },
+  { id: 'prodigo', name: 'Hijo pródigo', desc: 'Veces que has vuelto tras más de dos meses sin jugar', tiers: [1, 2, 4], unit: 'vueltas' },
+  { id: 'citafija', name: 'Cita fija', desc: 'Torneos jugados en tu día de la semana favorito', tiers: [5, 15, 40], unit: 'torneos' },
+  { id: 'puntual', name: 'Puntual', desc: 'Check-in hecho al llegar a un torneo de Commander', tiers: [3, 10, 25], unit: 'check-ins' },
+  { id: 'previsor', name: 'Previsor', desc: 'Torneos de Commander a los que te apuntaste desde la web', tiers: [3, 10, 25], unit: 'torneos' },
   { id: 'poliglota', name: 'Políglota', desc: 'Juegos distintos jugados en torneo', tiers: [2, 3, 4], unit: 'juegos' },
   { id: 'milcaras', name: 'Mil caras', desc: 'Comandantes distintos en Commander', tiers: [3, 7, 15], unit: 'comandantes' },
   { id: 'conpoco', name: 'Con poco', desc: 'Mesas de Commander ganadas con un mazo de menos de 50 €', tiers: [1, 3, 10], unit: 'mesas' },
@@ -36,7 +44,7 @@ const BADGES = [
   { id: 'trasnochador', name: 'Trasnochador', desc: 'Mesas terminadas pasada la medianoche', tiers: [1, 3, 10], unit: 'mesas', secret: true },
 ];
 const TIER = ['', 'Bronce', 'Plata', 'Oro'];
-const XP = { casual: 4, casualWin: 6, kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
+const XP = { comeback: 20, month: 5, casual: 4, casualWin: 6, kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
 const RANKS = [[1, 'Novato'], [3, 'Aprendiz'], [5, 'Habitual'], [8, 'Veterano'], [12, 'Maestro'], [17, 'Leyenda']];
 const needFor = L => 25 * (L - 1) * L; // XP total para llegar al nivel L
 function levelOf(xp) {
@@ -66,9 +74,10 @@ function build() {
       enc.get(me).push({ ...e, opp, r });
     }
   }
+  const ckIn = new Map(db.prepare('SELECT id, checked_in_at, account_id, signed_at FROM cmd_players').all().map(r => [r.id, r]));
   const killsBy = new Map(db.prepare('SELECT p.id, COUNT(*) n FROM cmd_kills k JOIN cmd_players p ON p.id = k.killer_id GROUP BY p.id').all().map(r => [r.id, r.n]));
   const bountyClaims = new Map(db.prepare("SELECT claimed_key k, COUNT(*) n FROM bounties WHERE status IN ('claimed','delivered') GROUP BY claimed_key").all().map(r => [r.k, r.n]));
-  const bountyOn = new Map(db.prepare("SELECT person_key k, COUNT(*) n FROM bounties WHERE status != 'cancelled' GROUP BY person_key").all().map(r => [r.k, r.n]));
+  const bountyOn = new Map(db.prepare("SELECT person_key k, COUNT(*) n FROM bounties WHERE status NOT IN ('cancelled','pending') GROUP BY person_key").all().map(r => [r.k, r.n]));
   const accRows = db.prepare('SELECT id, name, nick FROM accounts').all();
   const accOf = new Map(accRows.map(a => [I.resolve('a:' + a.id), a]));
   const porra = new Map(db.prepare("SELECT account_id id, SUM(points) pts FROM predictions WHERE status = 'win' GROUP BY account_id").all().map(r => [r.id, r.pts]));
@@ -101,6 +110,21 @@ function build() {
     let wrun = weeks.length ? 1 : 0, wbest = wrun;
     for (let i = 1; i < weeks.length; i++) { wrun = weeks[i] === weeks[i - 1] + 1 ? wrun + 1 : 1; wbest = Math.max(wbest, wrun); }
     const cmdList = list.filter(e => e.source === 'commander');
+    // Fidelidad
+    const days = [...new Set(list.map(e => String(e.date || '').slice(0, 10)).filter(d => /^\d{4}-\d\d-\d\d$/.test(d)))].sort();
+    const months = [...new Set(days.map(d => d.slice(0, 7)))].sort();
+    const mIdx = m => Number(m.slice(0, 4)) * 12 + Number(m.slice(5, 7)) - 1;
+    let mrun = months.length ? 1 : 0, mbest = mrun;
+    for (let i = 1; i < months.length; i++) { mrun = mIdx(months[i]) === mIdx(months[i - 1]) + 1 ? mrun + 1 : 1; mbest = Math.max(mbest, mrun); }
+    let comebacks = 0;
+    for (let i = 1; i < days.length; i++) if ((Date.parse(days[i]) - Date.parse(days[i - 1])) / 864e5 > 60) comebacks++;
+    const first = days[0] || null, lastDay = days[days.length - 1] || null;
+    const years = first && lastDay && Date.now() - Date.parse(lastDay) < 90 * 864e5 ? Math.floor((Date.now() - Date.parse(first)) / (365.25 * 864e5)) : 0;
+    const wd = new Map(); for (const d of days) { const k = new Date(d + 'T12:00:00Z').getUTCDay(); wd.set(k, (wd.get(k) || 0) + 1); }
+    const curWeek = weekIndex(isoWeek(new Date().toISOString()));
+    let wcur = 0;
+    if (weeks.length && curWeek - weeks[weeks.length - 1] <= 1) { wcur = 1; for (let i = weeks.length - 1; i > 0 && weeks[i] === weeks[i - 1] + 1; i--) wcur++; }
+    const loyalty = { since: first, last: lastDay, weekStreak: wcur, playedThisWeek: !!weeks.length && weeks[weeks.length - 1] === curWeek, months: months.length };
     const podWins = cmdList.reduce((s, e) => s + (podWin.get(e.playerId) || 0), 0);
     const matchWins = list.filter(e => e.source === 'melee').reduce((s, e) => s + (e.w || 0), 0);
     const titles = list.filter(e => e.finished && e.rank === 1).length;
@@ -109,6 +133,9 @@ function build() {
       asiduo: list.length, campeon: titles, podio: podiums, racha: best,
       sociable: new Set(es.map(e => e.opp)).size, fiel: wbest,
       poliglota: new Set(list.map(e => e.game)).size,
+      constante: mbest, mesames: months.length, aniversario: years, prodigo: comebacks, citafija: wd.size ? Math.max(...wd.values()) : 0,
+      puntual: cmdList.filter(e => (ckIn.get(e.playerId) || {}).checked_in_at).length,
+      previsor: cmdList.filter(e => { const r = ckIn.get(e.playerId) || {}; return r.account_id && r.signed_at; }).length,
       milcaras: new Set(cmdList.map(e => String(e.deck || '').trim().toLowerCase()).filter(Boolean)).size,
       conpoco: cmdList.reduce((s, e) => s + (cheapWin.get(e.playerId) || 0), 0),
       verdugo: cmdList.reduce((s, e) => s + (killsBy.get(e.playerId) || 0), 0),
@@ -125,6 +152,7 @@ function build() {
     }
     const specials = (() => { try { return require('./specials').of(key); } catch (e) { return []; } })();
     const xp = specials.reduce((n, s) => n + (s.xp || 0), 0) + v.verdugo * XP.kill + list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
+      + comebacks * XP.comeback + months.length * XP.month
       + (f ? f.casualGames * XP.casual + f.casualWins * XP.casualWin : 0)
       + v.adivino * XP.porraPoint + v.cazador * XP.bounty + v.mecenas * XP.loan + v.reportero * XP.moment + Math.min(v.comerciante, 50) * XP.trade;
     const badges = BADGES.map(b => {
@@ -132,7 +160,7 @@ function build() {
       const tier = b.tiers.filter(t => val >= t).length;
       return { ...b, value: val, tier, tierName: TIER[tier], next: b.tiers[tier] ?? null, pct: tier >= 3 ? 100 : Math.min(100, Math.round(val * 100 / b.tiers[tier])) };
     });
-    out.set(key, { key, account: acc, xp, ...levelOf(xp), badges, earned: badges.filter(b => b.tier).length, values: v, specials });
+    out.set(key, { key, account: acc, xp, ...levelOf(xp), badges, earned: badges.filter(b => b.tier).length, values: v, specials, loyalty });
   }
   return out;
 }

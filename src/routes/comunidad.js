@@ -142,17 +142,41 @@ r.get('/recompensas', (req, res) => {
   const all = K.bounties();
   const act = all.filter(b => b.status === 'active');
   const done = all.filter(b => ['claimed', 'delivered'].includes(b.status)).slice(0, 20);
-  res.send(page('Se busca', html`<h1>Se busca</h1>${commTabs('recompensas')}
-    <p class="muted">La tienda pone recompensa a algunos jugadores. El primero que les gane una partida (o una mesa de Commander) en un torneo de la tienda se la lleva: pásate por el mostrador a recogerla.</p>
+  const acc = req.account;
+  const mine = acc ? all.filter(b => b.poster_account === acc.id && ['pending', 'active'].includes(b.status)) : [];
+  res.send(page('Se busca', html`<h1>Se busca</h1>${commTabs('recompensas')}${flash(req)}
+    <p class="muted">Recompensas por cazar a algunos jugadores en los torneos de la tienda: ganarles una partida o mesa, eliminarles en el contador de vidas o ganarles varias veces. Algunas son solo para un cazador concreto. Quien la cumpla primero se la lleva.</p>
     ${act.length ? html`<div class="wanted">${act.map(b => html`<article class="poster">
       <span class="p-top">Se busca</span><div class="p-face">${pname(b.person_key).slice(0, 1).toUpperCase()}</div>
       <h2>${plink(b.person_key)}</h2>${b.note ? html`<p class="p-note">${b.note}</p>` : ''}
-      <div class="p-reward"><small>Recompensa</small><b>${b.reward}</b></div>
+      <p class="p-how">${b.how}</p>
+      <div class="p-reward"><small>Recompensa${b.poster_account ? html` de ${K.accName(require('../accounts').get(b.poster_account))}` : ''}</small><b>${b.reward}</b></div>
       <small class="p-foot">${b.game ? html`Solo en ${gShort(b.game)} · ` : ''}desde el ${shortDate(b.created_at)}</small></article>`)}</div>`
       : html`<p class="empty">Ahora mismo no hay nadie en busca y captura.</p>`}
     ${done.length ? html`<section><h2 class="sec">Recompensas cobradas</h2><div class="results">${done.map(b => html`<a class="rrow brow" href="${b.claimed_href || '#'}">
       <span class="r-date">${shortDate(b.claimed_at)}</span><span class="r-name"><b>${pname(b.claimed_key)}</b> ganó a ${pname(b.person_key)}<small class="muted"> · ${b.claimed_event || ''}</small></span>
-      <span class="r-win">${b.reward}</span><span class="r-go">→</span></a>`)}</div></section>` : ''}`));
+      <span class="r-win">${b.reward}</span><span class="r-go">→</span></a>`)}</div></section>` : ''}
+    <section id="proponer"><h2 class="sec">Pon tu propia caza</h2>
+      ${!acc ? loginHint(req, 'Entra en tu cuenta para poner precio a la cabeza de alguien (la recompensa la pones tú).')
+      : !feature('profiles') ? html`<p class="muted">Pídelo en el mostrador.</p>`
+      : html`<p class="small muted">La recompensa la das tú (un sobre, una carta…). La tienda la revisa antes de publicarla. Máximo 3 a la vez.</p>
+      ${mine.length ? html`<ul class="clist">${mine.map(b => html`<li>${pname(b.person_key)} · ${b.reward} · <b>${b.status === 'pending' ? 'pendiente de revisar' : 'activa'}</b></li>`)}</ul>` : ''}
+      <form method="post" action="/recompensas/proponer" class="lfgform">
+        <label class="wide">A quién buscas<span class="ppick pubpick"><input class="pub-pick" data-field="person_key" placeholder="Nombre del jugador" autocomplete="off" required><input type="hidden" name="person_key"></span></label>
+        <label>Recompensa<input name="reward" maxlength="80" placeholder="Un sobre, una carta…" required></label>
+        <label>Cómo se cobra<select name="kind">${Object.entries(K.BKIND).map(([k, t]) => html`<option value="${k}">${t}</option>`)}</select></label>
+        <label>Veces<select name="times">${[2, 3, 4, 5].map(n => html`<option>${n}</option>`)}</select></label>
+        <label>Caduca<select name="days"><option value="14">En 2 semanas</option><option value="7">En 1 semana</option><option value="30">En 1 mes</option></select></label>
+        <label class="wide">Solo para este cazador (opcional)<span class="ppick pubpick"><input class="pub-pick" data-field="hunter_key" placeholder="Cualquiera" autocomplete="off"><input type="hidden" name="hunter_key"></span></label>
+        <label class="wide">Nota (opcional)<input name="note" maxlength="200" placeholder="Por ejemplo: me ganó tres semanas seguidas"></label>
+        <button class="jbtn">Proponer caza</button></form>`}</section>
+    <script src="/static/community.js"></script>`));
+});
+r.post('/recompensas/proponer', (req, res) => {
+  if (!feature('bounties')) return off(res, 'Se busca');
+  if (!need(req, res)) return;
+  try { K.addBounty(req.body, null, { posterAccount: req.account.id }); back(res, '/recompensas#proponer', 'Propuesta enviada: la tienda la revisa y la publica'); }
+  catch (e) { back(res, '/recompensas#proponer', e.message, true); }
 });
 
 // ---------- Porra ----------

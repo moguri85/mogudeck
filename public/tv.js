@@ -150,8 +150,8 @@
         <p class="tv-hint">Escanea el QR y apúntate</p></div>`;
     } else if (s.kind === 'bounty') {
       body = `<div class="tv-head" style="--g:#f47700"><div class="tv-title"><small>Recompensas</small>Se busca</div>${state.bountiesQr ? `<img class="tv-qr" src="${state.bountiesQr}" alt="">` : ''}</div>
-        <div class="tv-body"><div class="tv-wanted">${state.bounties.map(b => `<div class="tv-poster"><span>Se busca</span><div class="pf">${esc(b.name.charAt(0).toUpperCase())}</div><b>${esc(b.name)}</b>${b.note ? `<p>${esc(b.note)}</p>` : ''}<em>Recompensa<strong>${esc(b.reward)}</strong></em></div>`).join('')}</div>
-        <p class="tv-hint">Gánale una partida en un torneo de la tienda y la recompensa es tuya</p></div>`;
+        <div class="tv-body"><div class="tv-wanted">${state.bounties.map(b => `<div class="tv-poster"><span>Se busca</span><div class="pf">${esc(b.name.charAt(0).toUpperCase())}</div><b>${esc(b.name)}</b>${b.note ? `<p>${esc(b.note)}</p>` : ''}${b.how ? `<small class="how">${esc(b.how)}</small>` : ''}<em>Recompensa<strong>${esc(b.reward)}</strong></em></div>`).join('')}</div>
+        <p class="tv-hint">Cúmplelo en un torneo de la tienda y la recompensa es tuya</p></div>`;
     } else if (s.kind === 'moment') {
       const m = s.m;
       body = `<div class="tv-moment"><img src="${m.src}" alt=""><div class="tvm-cap">${m.caption ? `<b>${esc(m.caption)}</b>` : ''}<span>${esc(m.who)}${m.event ? ` · ${esc(m.event)}` : ''}</span></div>

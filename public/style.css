@@ -1730,3 +1730,5 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .ach.secret span { font-style: italic; }
 .spadm { border-bottom: 1px solid var(--line, #eee); padding: 8px 0; } .spadm > summary { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .splist { margin: 6px 0; } .splist li { margin: 2px 0; }
+.poster .p-how { font: 600 13px/1.3 var(--font); margin: 4px 0 8px; color: #6b4a1f; }
+.tv-poster .how { display: block; font: 600 2vh/1.3 var(--font); color: #aaa; margin: .6vh 0 1vh; }

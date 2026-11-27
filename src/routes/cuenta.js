@@ -120,6 +120,8 @@ r.get('/cuenta', (req, res) => {
         pend ? html`<a class="qchip hot" href="/prestamos">${pend} ${pend === 1 ? 'solicitud' : 'solicitudes'} de préstamo</a>` : '',
         tm ? html`<a class="qchip" href="/cambios">${tm} ${tm === 1 ? 'cruce' : 'cruces'} en Tengo / Busco</a>` : '',
         pr && pr.total ? html`<a class="qchip" href="/porra#ranking">Porra: ${pr.pts} pts</a>` : '',
+        st && st.loyalty && st.loyalty.weekStreak >= 2 ? html`<a class="qchip ${st.loyalty.playedThisWeek ? '' : 'hot'}" href="/">Racha: ${st.loyalty.weekStreak} semanas seguidas${st.loyalty.playedThisWeek ? '' : ' · juega esta semana para no perderla'}</a>` : '',
+        st && st.loyalty && st.loyalty.last && Date.now() - Date.parse(st.loyalty.last) > 21 * 864e5 ? html`<a class="qchip hot" href="/">Hace ${Math.floor((Date.now() - Date.parse(st.loyalty.last)) / 864e5)} días de tu último torneo: ¡te esperamos!</a>` : '',
         R.nemesis ? html`<a class="qchip" href="/vs/${encodeURIComponent(acc.person)}/${encodeURIComponent(R.nemesis.key)}">Tu némesis: ${people.publicName(R.nemesis.key)}</a>` : '',
       ].filter(Boolean);
       return html`${nw.length ? html`<div class="newbadges" role="status"><b>¡Nuevo logro!</b>${nw.map(b => html`<span>${CM.medal(b, 40)}${b.name} · ${b.tierName}</span>`)}</div>` : ''}
