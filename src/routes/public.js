@@ -205,7 +205,8 @@ r.get('/evento/:aid', (req, res) => {
     <p><a href="/">← Próximos torneos</a></p>`)));
 });
 // Información del evento en la web de la tienda (si está publicado en el calendario y coincide en día y juego)
-function calBox(ref) {
+// Si el torneo ya tiene su propia información, del calendario solo se muestran precio y botones (si no, sale repetido)
+function calBox(ref, ownInfo) {
   if (!feature('calendar')) return '';
   const J = require('../jupcal');
   const m = J.match({ ref });
@@ -215,7 +216,7 @@ function calBox(ref) {
     <div class="calbox-top">${a.price ? html`<span class="tcard-price big">${a.price_cents === 0 ? 'Gratis' : a.price}</span>` : ''}
       ${a.signup ? html`<a class="jbtn" href="${a.signup}" rel="noopener" target="_blank">Reservar plaza en la tienda</a>` : ''}
       ${a.url ? html`<a class="jbtn-outline" href="${a.url}" rel="noopener" target="_blank">Ver en jupiterjuegos.com</a>` : ''}</div>
-    ${a.infoHtml ? html`<details class="calinfo"><summary>Reglas, premios y más información</summary><div class="calhtml">${raw(a.infoHtml)}</div></details>` : ''}</section>`;
+    ${a.infoHtml && !ownInfo ? html`<details class="calinfo"><summary>Reglas, premios y más información</summary><div class="calhtml">${raw(a.infoHtml)}</div></details>` : ''}</section>`;
 }
 r.get('/t/:id', (req, res) => {
   const t = publicTournament(Number(req.params.id));
@@ -237,7 +238,7 @@ r.get('/t/:id', (req, res) => {
       </div>
     </div>
     ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${richText(t.info)}</section>` : ''}
-    ${!snap.live ? calBox(`m:${t.id}`) : ''}
+    ${!snap.live ? calBox(`m:${t.id}`, !!t.info) : ''}
     <div id="live" data-id="${t.id}"></div>
     ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${richText(t.info)}</section>` : ''}
     ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en Melee</a></p>` : ''}
@@ -633,7 +634,7 @@ r.get('/commander/:id', (req, res) => {
     ${signupBox(req, ev)}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status === 'setup' ? budgetBox(ev) : ''}
     ${ev.info && ev.status !== 'running' ? html`<section class="infobox"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
-    ${ev.status === 'setup' ? calBox(`c:${ev.id}`) : ''}
+    ${ev.status === 'setup' ? calBox(`c:${ev.id}`, !!ev.info) : ''}
     <div id="cmd" data-id="${ev.id}"></div>
     ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status !== 'setup' ? budgetBox(ev) : ''}
