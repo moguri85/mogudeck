@@ -123,7 +123,7 @@ r.get('/cuenta', (req, res) => {
         R.nemesis ? html`<a class="qchip" href="/vs/${encodeURIComponent(acc.person)}/${encodeURIComponent(R.nemesis.key)}">Tu némesis: ${people.publicName(R.nemesis.key)}</a>` : '',
       ].filter(Boolean);
       return html`${nw.length ? html`<div class="newbadges" role="status"><b>¡Nuevo logro!</b>${nw.map(b => html`<span>${CM.medal(b, 40)}${b.name} · ${b.tierName}</span>`)}</div>` : ''}
-        ${st ? html`<a class="lvlwrap" href="/logros">${CM.levelCard(st, { compact: true })}</a>` : ''}
+        ${st ? html`${CM.featuredChips(acc.person)}<a class="lvlwrap" href="/logros">${CM.levelCard(st, { compact: true })}</a>` : ''}
         ${links.length ? html`<div class="qchips">${links}</div>` : ''}`;
     })()}
 

@@ -47,15 +47,34 @@ function levelCard(st, { compact = false } = {}) {
       <div class="lvl-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${st.pct}" aria-label="Progreso al nivel ${st.level + 1}"><i style="width:${st.pct}%"></i></div>
       <small>${(st.to - st.xp).toLocaleString('es-ES')} XP para el nivel ${st.level + 1} · ${st.earned} de ${badges.BADGES.length} insignias</small></div></div>`;
 }
+// Insignias especiales (las da la tienda): medallón con su color e icono
+function spMedal(s, size = 56) {
+  return raw(`<svg class="medal sp" width="${size}" height="${size}" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="25" fill="${s.color}" stroke="#111" stroke-width="3"/>
+    <circle cx="28" cy="28" r="19" fill="none" stroke="#fff" stroke-opacity=".55" stroke-width="1.5"/>
+    <text x="28" y="36" text-anchor="middle" font-size="22" font-weight="800" fill="#fff" font-family="system-ui, sans-serif">${String(s.icon || s.name.slice(0, 1)).replace(/[<>&"]/g, '')}</text></svg>`);
+}
+function specialGrid(list) {
+  return list.length ? html`<div class="bgrid">${list.map(s => html`<div class="ach got special" title="${s.descr || ''}">${spMedal(s)}<div><b>${s.name} <small>Especial</small></b><span>${s.descr || ''}</span>${s.note ? html`<small>${s.note}</small>` : ''}</div></div>`)}</div>` : '';
+}
+// Las destacadas, junto al nombre (perfil y rankings)
+function featuredChips(key, { small = false } = {}) {
+  let list = [];
+  try { list = require('../specials').featured(key); } catch (e) { list = []; }
+  return list.length ? html`<span class="spchips ${small ? 'sm' : ''}">${list.map(s => html`<span class="spchip" style="--c:${s.color}" title="${s.descr || s.name}"><i>${s.icon || s.name.slice(0, 1)}</i>${small ? '' : s.name}</span>`)}</span>` : '';
+}
 function badgeGrid(st, { all = true } = {}) {
-  const list = (all ? st.badges : st.badges.filter(b => b.tier)).slice().sort((x, y) => y.tier - x.tier || y.pct - x.pct);
-  return html`<div class="bgrid">${list.map(b => html`<div class="ach ${b.tier ? 'got' : 'lock'}" title="${b.desc}">
-    ${medal(b)}<div><b>${b.name}${b.tier ? html` <small>${b.tierName}</small>` : ''}</b><span>${b.desc}</span>
+  const list = (all ? st.badges : st.badges.filter(b => b.tier)).slice().sort((x, y) => y.tier - x.tier || (x.secret ? 1 : 0) - (y.secret ? 1 : 0) || y.pct - x.pct);
+  return html`<div class="bgrid">${list.map(b => b.secret && !b.tier ? html`<div class="ach lock secret" title="Logro secreto"><svg class="medal" width="56" height="56" viewBox="0 0 56 56" aria-hidden="true"><circle cx="28" cy="28" r="25" fill="#e4e4e4" stroke="#9a9a9a" stroke-width="3" stroke-dasharray="4 3"/><text x="28" y="36" text-anchor="middle" font-size="22" font-weight="800" fill="#9a9a9a" font-family="system-ui, sans-serif">?</text></svg>
+    <div><b>Logro secreto</b><span>Sigue jugando para descubrirlo</span></div></div>` : html`<div class="ach ${b.tier ? 'got' : 'lock'}" title="${b.desc}">
+    ${medal(b)}<div><b>${b.name}${b.tier ? html` <small>${b.tierName}${b.secret ? ' · secreto' : ''}</small>` : ''}</b><span>${b.desc}</span>
     ${b.tier < 3 ? html`<div class="bbar"><i style="width:${b.pct}%"></i></div><small>${b.value} / ${b.next} ${b.unit}</small>` : html`<small>${b.value} ${b.unit} · ¡completa!</small>`}</div></div>`)}</div>`;
 }
 module.exports.levelCard = levelCard;
 module.exports.badgeGrid = badgeGrid;
 module.exports.medal = medal;
+module.exports.specialGrid = specialGrid;
+module.exports.featuredChips = featuredChips;
+module.exports.spMedal = spMedal;
 
 // ---------- Hub ----------
 r.get('/comunidad', (req, res) => {
@@ -180,15 +199,17 @@ r.get('/logros', (req, res) => {
   const st = acc ? badges.of(acc.person) : null;
   const top = badges.leaderboard(50);
   res.send(page('Logros', html`<h1>Logros y niveles</h1>${commTabs('logros')}
-    ${st ? html`${levelCard(st)}<h2 class="sec">Tus insignias</h2>${badgeGrid(st)}` : loginHint(req, 'Entra en tu cuenta para ver tu nivel y tus insignias. Si ya has jugado en la tienda, une tu ficha y contarán todos tus torneos.')}
+    ${st ? html`${levelCard(st)}${st.specials && st.specials.length ? html`<h2 class="sec">Tus insignias especiales</h2>${specialGrid(st.specials)}` : ''}<h2 class="sec">Tus insignias</h2>${badgeGrid(st)}` : loginHint(req, 'Entra en tu cuenta para ver tu nivel y tus insignias. Si ya has jugado en la tienda, une tu ficha y contarán todos tus torneos.')}
     <details class="xphelp"><summary>Cómo se gana experiencia</summary><ul>
       <li>Cada torneo jugado: <b>${badges.XP.event} XP</b>. Cada partida ganada: <b>${badges.XP.matchWin}</b>. Cada mesa de Commander ganada: <b>${badges.XP.podWin}</b>. Cada jugador que eliminas (contador de vidas): <b>${badges.XP.kill}</b>.</li>
       <li>Podio: <b>${badges.XP.podium} XP</b>. Torneo ganado: <b>${badges.XP.title} XP</b>.</li>
       <li>Punto de porra: <b>${badges.XP.porraPoint} XP</b>. Recompensa cobrada: <b>${badges.XP.bounty} XP</b>. Mazo prestado y devuelto: <b>${badges.XP.loan} XP</b>. Foto publicada en la TV: <b>${badges.XP.moment} XP</b>. Cartas en Tengo / Busco: <b>${badges.XP.trade} XP</b> cada una (hasta 50).</li>
       ${feature('casual_league') ? html`<li>Partida de la liga casual confirmada: <b>${badges.XP.casual} XP</b> (y <b>${badges.XP.casualWin}</b> más si ganas).</li>` : ''}</ul></details>
+    ${(() => { const vis = require('../specials').list().filter(s => !s.hidden); return vis.length ? html`<section><h2 class="sec">Insignias especiales</h2><p class="small muted">Las da la tienda. Hay alguna más que no sale aquí…</p>
+      <div class="bgrid">${vis.map(s => html`<div class="ach got special" title="${s.descr || ''}">${spMedal(s, 48)}<div><b>${s.name}</b><span>${s.descr || ''}</span><small>${s.holders} ${s.holders === 1 ? 'jugador la tiene' : 'jugadores la tienen'}</small></div></div>`)}</div></section>` : ''; })()}
     <section><h2 class="sec">Ranking de experiencia</h2>
       ${top.length ? html`<ol class="prank xprank">${top.map(x => html`<li class="${st && x.key === st.key ? 'me' : ''}"><span class="pos">${x.pos}</span>
-        <b>${feature('profiles') ? html`<a href="/jugador/${encodeURIComponent(x.key)}">${x.name}</a>` : x.name}</b><span class="muted small">Nivel ${x.level} · ${x.title} · ${x.earned} insignias</span><em>${x.xp.toLocaleString('es-ES')} XP</em></li>`)}</ol>`
+        <b>${feature('profiles') ? html`<a href="/jugador/${encodeURIComponent(x.key)}">${x.name}</a>` : x.name} ${featuredChips(x.key, { small: true })}</b><span class="muted small">Nivel ${x.level} · ${x.title} · ${x.earned} insignias</span><em>${x.xp.toLocaleString('es-ES')} XP</em></li>`)}</ol>`
         : html`<p class="muted">Aún no hay nadie en el ranking.</p>`}</section>`));
 });
 

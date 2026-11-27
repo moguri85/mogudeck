@@ -28,7 +28,9 @@ function rows() {
       const mine = kills.filter(k => k.killer_id === s.id);
       out.push({ key: people.cmdKey(s, idx), name: s.name, cmd: L.cmdName(s.deck) || null, place: s.place || (pd.winner_id === s.id ? 1 : null), win: pd.winner_id === s.id, size: pd.size,
         kills: mine.length, killsCmd: mine.filter(k => k.how === 'comandante').length, killsPoison: mine.filter(k => k.how === 'veneno').length,
-        turns: t ? t.n : 0, turnMs: t ? t.ms : 0, lifeEnd: lp ? lp.life : null, eventId: pd.event_id, podId: pd.id, source: 'torneo' });
+        turns: t ? t.n : 0, turnMs: t ? t.ms : 0, lifeEnd: lp ? lp.life : null, eventId: pd.event_id, podId: pd.id, source: 'torneo',
+        durMs: st && st.startedAt && st.done && st.done.at ? st.done.at - st.startedAt : null, endAt: st && st.done ? st.done.at : null,
+        podKills: kills.length, partner: /\s\+\s/.test(s.deck || '') });
     }
   }
   // Liga casual (solo partidas confirmadas por todos)
@@ -87,6 +89,12 @@ function facts(rs) {
     casualWins: rs.filter(r => r.source === 'casual' && r.win).length,
     fastPods: rs.filter(r => r.turns >= 4 && r.turnMs / r.turns < 90000).length,
     winCommanders: new Set(rs.filter(r => r.cmd && r.win).map(r => r.cmd)).size,
+    // Para los logros secretos
+    marathons: rs.filter(r => r.durMs && r.durMs >= 90 * 60000).length,
+    expressWins: rs.filter(r => r.win && r.durMs && r.durMs <= 25 * 60000).length,
+    pacifist: rs.filter(r => r.win && r.podKills > 0 && r.kills === 0).length,
+    partnerGames: rs.filter(r => r.partner).length,
+    lateNights: rs.filter(r => r.endAt && Number(new Date(r.endAt).toLocaleString('en-GB', { timeZone: require('./config').tz, hour: '2-digit', hour12: false })) < 6).length,
   };
 }
 

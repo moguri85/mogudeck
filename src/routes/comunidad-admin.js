@@ -71,8 +71,33 @@ r.get('/comunidad', (req, res) => {
     ${feature('lfg') ? (() => { const ls = CA.lfgList(); return html`<section class="panel"><h2>Busco mesa</h2>${ls.length ? html`<ul>${ls.map(l => html`<li>${l.day}${l.time ? ' ' + l.time : ''} · ${l.joined.length}/${l.slots} · ${l.note || ''}
       <form method="post" action="/admin/comunidad/lfg/${l.id}/cancelar" class="inline" onsubmit="return confirm('¿Cancelar la quedada?')"><button class="link danger">Cancelar</button></form></li>`)}</ul>` : html`<p class="muted">No hay quedadas abiertas.</p>`}</section>`; })() : ''}
 
+    ${feature('badges') ? (() => { const SP = require('../specials'); const CM = require('./comunidad'); const sps = SP.list();
+      const form = (b = {}) => html`<div class="grid2"><label>Nombre<input name="name" value="${b.name || ''}" maxlength="40" required></label>
+        <label>Icono (1-3 caracteres o emoji)<input name="icon" value="${b.icon || ''}" maxlength="3"></label>
+        <label class="full">Descripción<input name="descr" value="${b.descr || ''}" maxlength="140"></label>
+        <label>Color<input type="color" name="color" value="${b.color || '#f47700'}"></label><label>XP extra<input type="number" name="xp" min="0" max="500" value="${b.xp || 0}"></label>
+        <label class="check-inline full"><input type="checkbox" name="hidden" value="1" ${b.id ? (b.hidden ? 'checked' : '') : 'checked'}> Oculta: no sale en la lista de insignias, solo en el perfil de quien la tiene</label>
+        <label class="check-inline full"><input type="checkbox" name="featured" value="1" ${b.id ? (b.featured ? 'checked' : '') : 'checked'}> Destacada: sale junto al nombre en el perfil, en Mi cuenta y en el ranking</label></div>`;
+      return html`<section class="panel" id="especiales"><h2>Insignias especiales</h2>
+      <p class="small muted">Las das tú a mano: Beta tester, Staff, Juez… Suman la XP extra que les pongas.</p>
+      ${sps.map(b => html`<details class="spadm"><summary>${CM.spMedal(b, 32)} <b>${b.name}</b> <small class="muted">${b.holders} ${b.holders === 1 ? 'jugador' : 'jugadores'}${b.hidden ? ' · oculta' : ''}${b.featured ? ' · destacada' : ''}${b.xp ? ` · +${b.xp} XP` : ''}</small></summary>
+        <form method="post" action="/admin/comunidad/especial/${b.id}/dar" class="grid2"><label>Dar a<span class="ppick"><input class="person-pick" data-field="person_key" name="label" placeholder="Nombre o usuario de Melee" autocomplete="off" required><input type="hidden" name="person_key"></span></label>
+          <label>Nota (opcional)<input name="note" maxlength="140" placeholder="Por ejemplo: probó el contador de vidas"></label><div class="full"><button class="btn small">Dar insignia</button></div></form>
+        ${(() => { const hs = SP.holders(b.id); return hs.length ? html`<ul class="splist">${hs.map(h => html`<li><a href="/admin/jugadores/${encodeURIComponent(h.person_key)}">${people.publicName(h.person_key)}</a>${h.note ? html` <small class="muted">${h.note}</small>` : ''}
+          <form method="post" action="/admin/comunidad/especial/${b.id}/quitar" class="inline"><input type="hidden" name="person_key" value="${h.person_key}"><button class="link danger">Quitar</button></form></li>`)}</ul>` : ''; })()}
+        <details><summary class="small">Editar</summary><form method="post" action="/admin/comunidad/especial/${b.id}">${form(b)}<button class="btn small">Guardar</button></form>
+          <form method="post" action="/admin/comunidad/especial/${b.id}/borrar" onsubmit="return confirm('¿Borrar la insignia ${b.name}? Se quita a todos los que la tienen.')"><button class="link danger">Borrar insignia</button></form></details></details>`)}
+      <details><summary><b>Crear insignia</b></summary><form method="post" action="/admin/comunidad/especial">${form()}<button class="btn">Crear</button></form></details></section>`; })() : ''}
+
     ${feature('badges') ? html`<section class="panel"><h2>Ranking de experiencia</h2><ol class="xpadmin">${badges.leaderboard(10).map(x => html`<li><a href="/admin/jugadores/${encodeURIComponent(x.key)}">${x.name}</a> · nivel ${x.level} (${x.title}) · ${x.xp} XP · ${x.earned} insignias</li>`)}</ol></section>` : ''}`));
 });
+// Insignias especiales
+const SPX = () => require('../specials');
+r.post('/comunidad/especial', (req, res) => { try { SPX().save(req.body); back(res, '/admin/comunidad#especiales', 'Insignia creada'); } catch (e) { back(res, '/admin/comunidad#especiales', e.message, true); } });
+r.post('/comunidad/especial/:id', (req, res) => { try { SPX().save(req.body, Number(req.params.id)); back(res, '/admin/comunidad#especiales', 'Guardada'); } catch (e) { back(res, '/admin/comunidad#especiales', e.message, true); } });
+r.post('/comunidad/especial/:id/borrar', (req, res) => { SPX().remove(Number(req.params.id)); back(res, '/admin/comunidad#especiales', 'Insignia borrada'); });
+r.post('/comunidad/especial/:id/dar', (req, res) => { try { SPX().award(Number(req.params.id), req.body.person_key, req.body.note, req.user && req.user.username); back(res, '/admin/comunidad#especiales', 'Insignia dada'); } catch (e) { back(res, '/admin/comunidad#especiales', e.message, true); } });
+r.post('/comunidad/especial/:id/quitar', (req, res) => { SPX().revoke(Number(req.params.id), req.body.person_key); back(res, '/admin/comunidad#especiales', 'Insignia quitada'); });
 r.post('/comunidad/casual/:id/borrar', (req, res) => { CA.deleteGame(Number(req.params.id)); badges.invalidate && badges.invalidate(); back(res, '/admin/comunidad#liga-casual', 'Partida borrada'); });
 r.post('/comunidad/lfg/:id/cancelar', (req, res) => { CA.lfgCancel(Number(req.params.id), null, true); back(res, '/admin/comunidad', 'Quedada cancelada'); });
 r.post('/comunidad/recompensa', (req, res) => {

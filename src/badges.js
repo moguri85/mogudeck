@@ -28,6 +28,12 @@ const BADGES = [
   { id: 'mecenas', name: 'Mecenas', desc: 'Mazos prestados y devueltos', tiers: [1, 3, 10], unit: 'préstamos' },
   { id: 'comerciante', name: 'Comerciante', desc: 'Cartas en tu Tengo / Busco', tiers: [10, 50, 150], unit: 'cartas' },
   { id: 'reportero', name: 'Reportero', desc: 'Fotos publicadas en la TV', tiers: [1, 5, 15], unit: 'fotos' },
+  // Secretos: no se dice cómo se consiguen hasta tenerlos
+  { id: 'maraton', name: 'Maratón', desc: 'Mesas de Commander de más de hora y media (contador de vidas)', tiers: [1, 3, 10], unit: 'mesas', secret: true },
+  { id: 'expres', name: 'Exprés', desc: 'Mesas ganadas en menos de 25 minutos (contador de vidas)', tiers: [1, 3, 10], unit: 'mesas', secret: true },
+  { id: 'pacifista', name: 'Pacifista', desc: 'Mesas ganadas sin eliminar tú a nadie', tiers: [1, 3, 10], unit: 'mesas', secret: true },
+  { id: 'duo', name: 'Dúo dinámico', desc: 'Mesas jugadas con dos comandantes', tiers: [1, 5, 15], unit: 'mesas', secret: true },
+  { id: 'trasnochador', name: 'Trasnochador', desc: 'Mesas terminadas pasada la medianoche', tiers: [1, 3, 10], unit: 'mesas', secret: true },
 ];
 const TIER = ['', 'Bronce', 'Plata', 'Oro'];
 const XP = { casual: 4, casualWin: 6, kill: 4, event: 10, matchWin: 5, podWin: 12, podium: 20, title: 60, porraPoint: 3, bounty: 50, loan: 25, moment: 10, trade: 1 };
@@ -73,7 +79,9 @@ function build() {
   let facts = new Map();
   try { facts = require('./cmdstats').factsByKey(); } catch (e) { facts = new Map(); }
   const out = new Map();
-  const keys = new Set([...byKey.keys(), ...accOf.keys(), ...facts.keys()]);
+  let spKeys = [];
+  try { spKeys = [...require('./specials').byKey().keys()]; } catch (e) { spKeys = []; }
+  const keys = new Set([...byKey.keys(), ...accOf.keys(), ...facts.keys(), ...spKeys]);
   for (const key of keys) {
     const list = byKey.get(key) || [];
     const acc = accOf.get(key) || null;
@@ -112,9 +120,11 @@ function build() {
     const f = facts.get(key);
     if (f) {
       v.milcaras = Math.max(v.milcaras, f.commanders);
-      Object.assign(v, { versatil: f.winCommanders, remontada: f.comebacks, letal: f.killsCmd, venenoso: f.killsPoison, rayo: f.fastPods, casual: f.casualGames });
+      Object.assign(v, { versatil: f.winCommanders, remontada: f.comebacks, letal: f.killsCmd, venenoso: f.killsPoison, rayo: f.fastPods, casual: f.casualGames,
+        maraton: f.marathons, expres: f.expressWins, pacifista: f.pacifist, duo: f.partnerGames, trasnochador: f.lateNights });
     }
-    const xp = v.verdugo * XP.kill + list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
+    const specials = (() => { try { return require('./specials').of(key); } catch (e) { return []; } })();
+    const xp = specials.reduce((n, s) => n + (s.xp || 0), 0) + v.verdugo * XP.kill + list.length * XP.event + matchWins * XP.matchWin + podWins * XP.podWin + podiums * XP.podium + titles * XP.title
       + (f ? f.casualGames * XP.casual + f.casualWins * XP.casualWin : 0)
       + v.adivino * XP.porraPoint + v.cazador * XP.bounty + v.mecenas * XP.loan + v.reportero * XP.moment + Math.min(v.comerciante, 50) * XP.trade;
     const badges = BADGES.map(b => {
@@ -122,7 +132,7 @@ function build() {
       const tier = b.tiers.filter(t => val >= t).length;
       return { ...b, value: val, tier, tierName: TIER[tier], next: b.tiers[tier] ?? null, pct: tier >= 3 ? 100 : Math.min(100, Math.round(val * 100 / b.tiers[tier])) };
     });
-    out.set(key, { key, account: acc, xp, ...levelOf(xp), badges, earned: badges.filter(b => b.tier).length, values: v });
+    out.set(key, { key, account: acc, xp, ...levelOf(xp), badges, earned: badges.filter(b => b.tier).length, values: v, specials });
   }
   return out;
 }
@@ -133,7 +143,7 @@ function allStats() {
 function invalidate() { cache = null; }
 function of(key) {
   const k = I.resolve(key);
-  return allStats().get(k) || { key: k, xp: 0, ...levelOf(0), badges: BADGES.map(b => ({ ...b, value: 0, tier: 0, tierName: '', next: b.tiers[0], pct: 0 })), earned: 0, values: {} };
+  return allStats().get(k) || { key: k, xp: 0, ...levelOf(0), badges: BADGES.map(b => ({ ...b, value: 0, tier: 0, tierName: '', next: b.tiers[0], pct: 0 })), earned: 0, values: {}, specials: [] };
 }
 function leaderboard(limit = 50) {
   const people = require('./people');

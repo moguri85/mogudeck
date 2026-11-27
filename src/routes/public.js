@@ -321,11 +321,11 @@ r.get('/jugador/:key', (req, res) => {
   const pct = p.w + p.l + p.d ? Math.round(p.w * 100 / (p.w + p.l + p.d)) : 0;
   res.send(String(publicPage(p.name, html`
     <div class="phead"><div class="avatar">${p.name.slice(0, 1).toUpperCase()}</div>
-      <div><h1>${p.name}</h1><p class="muted">${p.games.map(g => html`<span class="gchip" style="--g:${melee.gameInfo(g.game).color}"><i></i>${gName(g.game)}</span> `)}</p></div></div>
+      <div><h1>${p.name}</h1>${feature('badges') ? require('./comunidad').featuredChips(p.key) : ''}<p class="muted">${p.games.map(g => html`<span class="gchip" style="--g:${melee.gameInfo(g.game).color}"><i></i>${gName(g.game)}</span> `)}</p></div></div>
     <div class="ptiles"><div><b>${p.events}</b><span>eventos</span></div><div><b>${p.titles}</b><span>torneos ganados</span></div>
       <div><b>${p.top3}</b><span>podios</span></div><div><b>${p.w}-${p.l}-${p.d}</b><span>V-D-E</span></div><div><b>${pct}%</b><span>victorias</span></div></div>
     ${(() => { if (!feature('badges')) return ''; const CM = require('./comunidad'); const st = require('../badges').of(p.key); return html`<section><div class="sec-row"><h2 class="sec">Nivel e insignias</h2><a class="small" href="/logros">Cómo funciona</a></div>
-      ${CM.levelCard(st)}${st.earned ? CM.badgeGrid(st, { all: false }) : html`<p class="muted small">Aún sin insignias.</p>`}</section>`; })()}
+      ${CM.levelCard(st)}${CM.specialGrid(st.specials || [])}${st.earned ? CM.badgeGrid(st, { all: false }) : (st.specials || []).length ? '' : html`<p class="muted small">Aún sin insignias.</p>`}</section>`; })()}
     ${(() => {
       const R = require('../rivals').rivals(p.key);
       if (!R.list.length) return '';
