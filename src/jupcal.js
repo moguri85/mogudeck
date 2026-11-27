@@ -12,12 +12,17 @@ CREATE TABLE IF NOT EXISTS cal_acts (aid INTEGER PRIMARY KEY, title TEXT, price 
 // Lo que llega del calendario entra como borrador: solo se ve en la web si la tienda lo publica. El contenido siempre manda el calendario
 addColumn('cal_acts', 'visible', 'INTEGER DEFAULT 0');
 addColumn('cal_acts', 'first_seen', 'TEXT');
+// Juego según su web (Commander se detecta por el título) y lo que la tienda ha cambiado a mano: { campo: { v: valor, base: valor de su web al editarlo } }
+addColumn('cal_acts', 'game', 'TEXT');
+addColumn('cal_acts', 'edits', 'TEXT');
 
 const DEFAULT_URL = 'https://jupiterjuegos.com/tiendas/valencia/';
 // La misma URL que «Enlace al calendario de la tienda» en Ajustes, si es una página de tienda de su web
 const calUrl = () => { const u = (setting('calendar_url') || '').trim(); return (/\/tiendas\/[^/?#]+\/?$/.test(u) ? u : DEFAULT_URL).replace(/\/?$/, '/'); };
 // Código de juego en su web (clase act_N) → juego en esta web
 const GAME = { 2: 'MagicTheGathering', 9: 'OnePiece', 10: 'StarWarsUnlimited', 13: 'Riftbound', 14: 'CyberpunkTCG', 5: 'other' };
+// En su web Commander va como Magic: lo separamos por el título
+const gameOf = (g, title) => (g === 'MagicTheGathering' && /commander|\bedh\b/i.test(title || '') ? 'commander' : g);
 
 async function get(url) {
   const r = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0 (compatible; JupiterTorneos/1.0)', Accept: 'text/html' }, signal: AbortSignal.timeout(20000) });
@@ -48,7 +53,8 @@ function parseMonth(html, year, month) {
     const day = d.toISOString().slice(0, 10);
     for (const a of chunk.matchAll(/<a class="act_0 act_(\d+)" href="[^"]*\/actividad\/(\d+)\/"[\s\S]*?<div style="font-size:13px;">([\s\S]*?)<\/div>\s*<div style="font-size:12px;">([\s\S]*?)<\/div>/g)) {
       const tm = (a[4].match(/(\d{1,2}):(\d{2})/) || []);
-      out.push({ aid: Number(a[2]), day, time: tm.length ? `${tm[1].padStart(2, '0')}:${tm[2]}` : null, title: text(a[3]), game: GAME[a[1]] || 'other' });
+      const title = text(a[3]);
+      out.push({ aid: Number(a[2]), day, time: tm.length ? `${tm[1].padStart(2, '0')}:${tm[2]}` : null, title, game: gameOf(GAME[a[1]] || 'other', title) });
     }
   });
   return out;
@@ -96,8 +102,8 @@ async function sync({ force = false } = {}) {
       const ins = db.prepare('INSERT OR REPLACE INTO cal_events (aid, day, time, title, game) VALUES (?, ?, ?, ?, ?)');
       for (const e of all) ins.run(e.aid, e.day, e.time, e.title, e.game);
       // Cada actividad nueva entra como borrador; el título se actualiza siempre (manda el calendario)
-      const seen = db.prepare("INSERT INTO cal_acts (aid, title, visible, first_seen) VALUES (?, ?, 0, datetime('now')) ON CONFLICT(aid) DO UPDATE SET title = excluded.title");
-      for (const e of all) seen.run(e.aid, e.title);
+      const seen = db.prepare("INSERT INTO cal_acts (aid, title, game, visible, first_seen) VALUES (?, ?, ?, 0, datetime('now')) ON CONFLICT(aid) DO UPDATE SET title = excluded.title, game = excluded.game");
+      for (const e of all) seen.run(e.aid, e.title, e.game);
     })();
     // Detalle de cada actividad (cada 12 horas como mucho)
     const origin = new URL(base).origin;
@@ -136,36 +142,104 @@ function localISO(day, time) {
   return new Date(guess - (asLocal - guess)).toISOString();
 }
 const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: config.tz });
-// Próximos eventos del calendario con su ficha
-function upcoming(limit = 200, { all = false } = {}) {
-  return db.prepare(`SELECT e.*, a.price, a.price_cents, a.img, a.signup, a.url, a.visible, a.info IS NOT NULL AND a.info != '' has_info FROM cal_events e JOIN cal_acts a ON a.aid = e.aid
-    WHERE e.day >= ? ${all ? '' : 'AND a.visible = 1'} ORDER BY e.day, e.time LIMIT ?`).all(today(), limit).map(e => ({ ...e, iso: localISO(e.day, e.time) }));
+// --- Cambios a mano. Por defecto manda su web: lo editado dura hasta que allí cambie ese campo.
+// Si el campo está fijado (lock), se queda lo nuestro aunque su web cambie ---
+const FIELDS = ['title', 'game', 'price', 'info', 'img', 'signup'];
+const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// HTML de su web → texto para editar
+const htmlToText = h => decode(String(h || '').replace(/<li[^>]*>/gi, '- ').replace(/<\/(p|li|h3|h4|ul|ol)>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''))
+  .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+// Texto editado → HTML sencillo (párrafos, saltos y enlaces)
+const textToHtml = t => esc(String(t || '').trim()).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" rel="noopener" target="_blank">$1</a>')
+  .split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+const cents = p => { const m = String(p || '').match(/(\d+(?:[.,]\d{1,2})?)/); return m ? Math.round(Number(m[1].replace(',', '.')) * 100) : (/gratis|gratuit|free/i.test(p || '') ? 0 : null); };
+const srcGame = a => a.game || (db.prepare('SELECT game FROM cal_events WHERE aid = ? ORDER BY day DESC LIMIT 1').get(a.aid) || {}).game || 'other';
+// Valor de su web de cada campo (como se edita)
+function source(a) {
+  return { title: a.title || '', game: gameOf(srcGame(a), a.title), price: a.price || '', info: htmlToText(a.info), img: a.img || '', signup: a.signup || '' };
 }
+const editsOf = a => { try { return JSON.parse(a.edits || '{}') || {}; } catch (e) { return {}; } };
+// La ficha tal como se muestra: lo de su web con lo editado encima
+function eff(a) {
+  if (!a) return null;
+  const src = source(a), all = editsOf(a), ed = {};
+  const o = { ...a, src, edited: [], locked: [], changed: [] };
+  for (const f of FIELDS) {
+    if (!all[f]) continue;
+    const moved = String(all[f].base) !== String(src[f]);
+    if (moved && !all[f].lock) continue; // su web ha cambiado ese campo: gana su web
+    ed[f] = all[f]; o.edited.push(f);
+    if (all[f].lock) { o.locked.push(f); if (moved) o.changed.push(f); }
+  }
+  if (ed.title) o.title = ed.title.v;
+  if (ed.price) { o.price = ed.price.v || null; o.price_cents = cents(ed.price.v); }
+  for (const f of ['img', 'signup']) if (ed[f]) o[f] = ed[f].v || null;
+  o.game = ed.game ? ed.game.v : src.game;
+  o.infoText = ed.info ? ed.info.v : src.info;
+  o.infoHtml = ed.info ? textToHtml(ed.info.v) : (a.info || '');
+  return o;
+}
+function setEdits(aid, body) {
+  const a = db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(aid);
+  if (!a) throw new Error('Ese evento no existe');
+  const src = source(a), ed = editsOf(a);
+  for (const f of FIELDS) {
+    if (body[f] == null) continue;
+    let v = String(body[f]).replace(/\r/g, '').trim().slice(0, f === 'info' ? 20000 : 300);
+    if ((f === 'img' || f === 'signup') && v && !/^https?:\/\//i.test(v)) throw new Error('Los enlaces tienen que empezar por http');
+    if (f === 'title' && !v) v = src.title;
+    const lock = !!body['lock_' + f];
+    const same = v === String(src[f]).trim();
+    if (same && !lock) { delete ed[f]; continue; }
+    // Si ya estaba fijado y no se ha tocado, se mantiene su base (para seguir avisando si su web cambió)
+    if (ed[f] && ed[f].v === v && ed[f].lock === lock && (lock || String(ed[f].base) === String(src[f]))) continue;
+    ed[f] = { v, base: src[f], lock };
+  }
+  db.prepare('UPDATE cal_acts SET edits = ? WHERE aid = ?').run(Object.keys(ed).length ? JSON.stringify(ed) : null, aid);
+}
+// Quitar lo editado de un campo (vuelve a mandar su web) o aceptar que se queda aunque su web haya cambiado
+function resetField(aid, f, keep = false) {
+  const a = db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(aid);
+  if (!a) return;
+  const ed = editsOf(a);
+  if (!ed[f]) return;
+  if (keep) ed[f].base = source(a)[f]; else delete ed[f];
+  db.prepare('UPDATE cal_acts SET edits = ? WHERE aid = ?').run(Object.keys(ed).length ? JSON.stringify(ed) : null, aid);
+}
+
+// Fechas con la ficha ya combinada
+function events(where, params) {
+  const acts = new Map();
+  return db.prepare(`SELECT e.aid, e.day, e.time FROM cal_events e JOIN cal_acts a ON a.aid = e.aid WHERE ${where} ORDER BY e.day, e.time`).all(...params).map(e => {
+    if (!acts.has(e.aid)) acts.set(e.aid, eff(db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(e.aid)));
+    const a = acts.get(e.aid);
+    return { ...e, title: a.title, game: a.game, price: a.price, price_cents: a.price_cents, img: a.img, signup: a.signup, url: a.url, infoHtml: a.infoHtml, visible: a.visible, iso: localISO(e.day, e.time) };
+  });
+}
+// Próximos eventos del calendario (solo publicados salvo all)
+const upcoming = (limit = 200, { all = false } = {}) => events(`e.day >= ? ${all ? '' : 'AND a.visible = 1'}`, [today()]).slice(0, limit);
 // Para el admin: actividades con sus próximas fechas
 function activities() {
-  const acts = db.prepare('SELECT * FROM cal_acts ORDER BY visible DESC, title').all();
-  const ds = db.prepare('SELECT day, time, game FROM cal_events WHERE aid = ? AND day >= ? ORDER BY day');
-  return acts.map(a => { const d = ds.all(a.aid, today()); return { ...a, dates: d, game: (d[0] || {}).game || null }; }).filter(a => a.dates.length || a.visible);
+  const ds = db.prepare('SELECT day, time FROM cal_events WHERE aid = ? AND day >= ? ORDER BY day');
+  return db.prepare('SELECT * FROM cal_acts').all().map(a => ({ ...eff(a), dates: ds.all(a.aid, today()) }))
+    .filter(a => a.dates.length || a.visible).sort((x, y) => ((x.dates[0] || {}).day || '9').localeCompare((y.dates[0] || {}).day || '9'));
 }
 const setVisible = (aid, on) => db.prepare('UPDATE cal_acts SET visible = ? WHERE aid = ?').run(on ? 1 : 0, aid);
-const act = aid => db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(aid) || null;
+const act = aid => eff(db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(aid));
 const datesOf = aid => db.prepare('SELECT day, time FROM cal_events WHERE aid = ? AND day >= ? ORDER BY day').all(aid, today());
 
 // ¿Este torneo nuestro (Melee o Commander) es un evento del calendario? Mismo día y juego; si hay varios, el de nombre más parecido
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ');
-const words = s => new Set(norm(s).split(/\s+/).filter(w => w.length > 2 && !['jupiter', 'valencia', 'torneo'].includes(w)));
+const words = s => new Set(norm(s).split(/\s+/).filter(w => w.length > 2 && !['jupiter', 'valencia', 'torneo', 'commander'].includes(w)));
 function match({ iso, game, name }, list) {
   if (!iso) return null;
   const day = new Date(iso).toLocaleDateString('sv-SE', { timeZone: config.tz });
-  const g = game === 'commander' ? 'MagicTheGathering' : game;
-  const cands = (list || db.prepare('SELECT e.*, a.price, a.price_cents, a.img, a.signup, a.url, a.info FROM cal_events e JOIN cal_acts a ON a.aid = e.aid WHERE e.day = ? AND a.visible = 1').all(day))
-    .filter(e => e.day === day && e.game === g)
-    .filter(e => { const c = /commander|edh/i.test(e.title); return game === 'commander' ? c : (c ? /commander|edh/i.test(name || '') : true); });
+  const cands = (list || events('e.day = ? AND a.visible = 1', [day])).filter(e => e.day === day && e.game === game);
   if (!cands.length) return null;
   const w = words(name);
-  const score = e => { const ew = words(e.title); let n = 0; for (const x of ew) if (w.has(x)) n++; return n + (game === 'commander' && /commander|edh/i.test(e.title) ? 2 : 0); };
+  const score = e => { let n = 0; for (const x of words(e.title)) if (w.has(x)) n++; return n; };
   const best = cands.map(e => ({ e, s: score(e) })).sort((a, b) => b.s - a.s)[0];
   return best.s > 0 || cands.length === 1 ? best.e : null;
 }
 
-module.exports = { activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };
+module.exports = { FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };

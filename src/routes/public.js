@@ -86,8 +86,8 @@ r.get('/', (req, res) => {
   const live = data.liveTournaments().filter(t => !game || t.game === game);
   const cmdNow = game && game !== 'commander' ? [] : C.liveEvents();
   const games = [...new Set([...db.prepare('SELECT DISTINCT game FROM tournaments WHERE hidden = 0 AND status != 0').all().map(x => x.game),
-    ...(feature('calendar') ? require('../jupcal').upcoming(300).map(e => e.game) : [])])];
-  const hasCmd = db.prepare('SELECT COUNT(*) c FROM cmd_events WHERE public = 1').get().c > 0;
+    ...(feature('calendar') ? require('../jupcal').upcoming(300).map(e => e.game) : [])])].filter(g => g !== 'commander');
+  const hasCmd = db.prepare('SELECT COUNT(*) c FROM cmd_events WHERE public = 1').get().c > 0 || (feature('calendar') && require('../jupcal').upcoming(300).some(e => e.game === 'commander'));
   // Agenda: torneos de Melee con inscripción + Commander por empezar
   const agenda = [
     ...(game === 'commander' ? [] : data.upcomingTournaments(400).filter(t => !game || t.game === game).map(t => ({
@@ -112,7 +112,7 @@ r.get('/', (req, res) => {
     }
     for (const e of cal) {
       if (used.has(`${e.aid}|${e.day}`)) continue;
-      if (game && !(e.game === game || (game === 'commander' && /commander|edh/i.test(e.title)))) continue;
+      if (game && e.game !== game) continue;
       agenda.push({ href: `/evento/${e.aid}?d=${e.day}`, date: e.iso, g: melee.gameInfo(e.game), game: e.game, name: e.title, players: null, price: e.price_cents, cta: 'Ver', fmt: '', calOnly: true, noTime: !e.time });
     }
   }
@@ -188,8 +188,7 @@ r.get('/evento/:aid', (req, res) => {
   const a = feature('calendar') ? J.act(Number(req.params.aid)) : null;
   if (!a || !a.visible) return res.status(404).send(String(publicPage('No encontrado', html`<p>Evento no encontrado.</p><p><a href="/">← Próximos torneos</a></p>`)));
   const dates = J.datesOf(a.aid);
-  const game = (db.prepare('SELECT game FROM cal_events WHERE aid = ? ORDER BY day DESC LIMIT 1').get(a.aid) || {}).game || 'other';
-  const g = melee.gameInfo(game);
+  const g = melee.gameInfo(a.game);
   const dl = d => { const t = new Date(d.day + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }); return t.charAt(0).toUpperCase() + t.slice(1) + (d.time ? ` · ${d.time}` : ''); };
   const sel = String(req.query.d || '');
   res.send(String(publicPage(a.title, html`
@@ -200,7 +199,7 @@ r.get('/evento/:aid', (req, res) => {
       <div class="thead-cta">${a.price ? html`<span class="tcard-price big">${a.price_cents === 0 ? 'Gratis' : a.price}</span>` : ''}
         ${a.signup ? html`<a class="jbtn big" href="${a.signup}" rel="noopener" target="_blank">Reservar plaza en la tienda</a>` : ''}</div></div></div>
     ${dates.length > 1 ? html`<section class="infobox"><h2>Próximas fechas</h2><ul class="caldates">${dates.slice(0, 12).map(d => html`<li class="${d.day === sel ? 'on' : ''}">${dl(d)}</li>`)}</ul></section>` : ''}
-    ${a.info ? html`<section class="infobox"><h2>Información</h2><div class="calhtml">${raw(a.info)}</div></section>` : ''}
+    ${a.infoHtml ? html`<section class="infobox"><h2>Información</h2><div class="calhtml">${raw(a.infoHtml)}</div></section>` : ''}
     ${a.img ? html`<p class="calimg"><img src="${a.img}" alt="Cartel de ${a.title}" loading="lazy"></p>` : ''}
     <p class="small muted">Información de <a href="${a.url}" rel="noopener" target="_blank">jupiterjuegos.com</a>. La inscripción y el pago se hacen en su web o en la tienda.</p>
     <p><a href="/">← Próximos torneos</a></p>`)));
@@ -216,7 +215,7 @@ function calBox(iso, game, name) {
     <div class="calbox-top">${a.price ? html`<span class="tcard-price big">${a.price_cents === 0 ? 'Gratis' : a.price}</span>` : ''}
       ${a.signup ? html`<a class="jbtn" href="${a.signup}" rel="noopener" target="_blank">Reservar plaza en la tienda</a>` : ''}
       ${a.url ? html`<a class="jbtn-outline" href="${a.url}" rel="noopener" target="_blank">Ver en jupiterjuegos.com</a>` : ''}</div>
-    ${a.info ? html`<details class="calinfo"><summary>Reglas, premios y más información</summary><div class="calhtml">${raw(a.info)}</div></details>` : ''}</section>`;
+    ${a.infoHtml ? html`<details class="calinfo"><summary>Reglas, premios y más información</summary><div class="calhtml">${raw(a.infoHtml)}</div></details>` : ''}</section>`;
 }
 r.get('/t/:id', (req, res) => {
   const t = publicTournament(Number(req.params.id));

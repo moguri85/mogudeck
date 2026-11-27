@@ -1740,3 +1740,7 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .calhtml a { color: var(--naranja); }
 .caldates { list-style: none; padding: 0; margin: 0; } .caldates li { padding: 7px 0; border-bottom: 1px solid var(--line); } .caldates li.on { font-weight: 700; color: var(--naranja); }
 .calimg img { max-width: 100%; height: auto; border-radius: 10px; display: block; margin: 0 auto; }
+.calfield { display: grid; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); } .calfield.edited { border-left: 3px solid var(--naranja); padding-left: 10px; }
+.calfield textarea, .calfield select { width: 100%; border-radius: 12px; border: 1px solid #d6d6d6; padding: 10px 14px; font: 400 15px/1.5 var(--font); }
+.calfield select { min-height: 48px; }
+.calfield .check-inline { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 14px; } .calfield .check-inline input { margin: 0; width: 18px; height: 18px; flex: none; }
