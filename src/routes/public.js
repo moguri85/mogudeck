@@ -76,24 +76,40 @@ const localDay = (iso, o = {}) => new Date(iso).toLocaleDateString('es-ES', { ti
 const ymd = d => d.toLocaleDateString('sv-SE', { timeZone: config.tz });
 const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
 function dayLabel(iso) {
-  if (!iso) return 'Fecha por confirmar';
+  if (!iso) return 'Por confirmar';
   const d = ymd(new Date(iso)), today = ymd(new Date()), tomorrow = ymd(new Date(Date.now() + 864e5));
-  if (d === today) return 'Hoy';
-  if (d === tomorrow) return 'Mañana';
-  const diff = (new Date(d) - new Date(today)) / 864e5;
-  return cap(localDay(iso, diff < 7 ? { weekday: 'long', day: 'numeric' } : { weekday: 'long', day: 'numeric', month: 'long' }));
+  return d === today ? 'Hoy' : d === tomorrow ? 'Mañana' : cap(localDay(iso, { weekday: 'long' }));
+}
+// Un bloque por día: la fecha a la izquierda (arriba en móvil) y sus torneos
+function dayCard(d) {
+  const iso = d.iso;
+  return html`<div class="dcard"><div class="dcard-h">
+      <span class="dh-rel">${d.label}</span>
+      ${iso ? html`<b class="dh-num">${localDay(iso, { day: 'numeric' })}</b><span class="dh-mon">${localDay(iso, { month: 'short' }).replace('.', '')}</span>` : ''}</div>
+    <div class="dcard-list">${d.rows.map(agendaRow)}</div></div>`;
+}
+// «5, 12 y 19 dic»: cada día enlaza a su torneo
+function nextDates(list) {
+  const shown = list.slice(0, 5);
+  const parts = shown.map((m, i) => {
+    const mon = localDay(m.date, { month: 'short' }).replace('.', ''), nextMon = shown[i + 1] ? localDay(shown[i + 1].date, { month: 'short' }).replace('.', '') : null;
+    return html`<a href="${m.href}">${localDay(m.date, { day: 'numeric' })}${mon !== nextMon ? ` ${mon}` : ''}</a>`;
+  });
+  return html`${parts.map((p, i) => html`${i ? (i === parts.length - 1 && list.length <= 5 ? ' y ' : ', ') : ''}${p}`)}${list.length > 5 ? html` y ${list.length - 5} más` : ''}`;
 }
 function agendaRow(a) {
-  const meta = a.calOnly ? 'Reserva en la tienda' : !a.players ? (a.places ? `${a.places} plazas` : 'Inscripción abierta') : a.places ? `${a.players}/${a.places} plazas` : `${a.players} ${a.players === 1 ? 'apuntado' : 'apuntados'}`;
+  const meta = a.calOnly ? 'Reserva en la tienda' : !a.players ? (a.places ? `${a.places} plazas` : 'Inscripción abierta') : a.places ? `${a.players} de ${a.places} plazas` : `${a.players} ${a.players === 1 ? 'apuntado' : 'apuntados'}`;
   const full = a.places && a.players >= a.places;
-  return html`<div class="arow" style="--g:${a.g.color}">
-    <div class="a-time">${a.date && !a.noTime ? hour(a.date) : '—'}</div>
-    <div class="a-info"><div class="a-top"><span class="gchip"><i></i>${a.g.short}</span>${a.fmt ? html`<span class="muted small">${a.fmt}</span>` : ''}${a.budget ? html`<span class="budgetchip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="budgetchip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
-      <a class="a-name a-link" href="${a.href}">${a.name}</a>
-      <div class="a-meta">${a.more.length ? html`<span>Cada ${localDay(a.date, { weekday: 'long' })}</span> · ` : ''}<span class="${full ? 'warn' : ''}">${meta}</span></div>
-      ${a.places ? html`<div class="a-bar" title="${meta}"><i style="width:${Math.min(100, Math.round((a.players || 0) / a.places * 100))}%"></i></div>` : ''}
-      ${a.more.length ? html`<div class="a-next"><span>Siguientes:</span>${a.more.slice(0, 4).map(m => html`<a href="${m.href}">${cap(localDay(m.date, { weekday: 'short', day: 'numeric', month: 'short' }).replace('.', ''))}</a>`)}${a.more.length > 4 ? html`<span>y ${a.more.length - 4} más</span>` : ''}</div>` : ''}</div>
-    <div class="a-side"><span class="tcard-price">${a.price != null ? (a.price ? money(a.price) : 'Gratis') : ''}</span><span class="jbtn">${a.cta}</span></div></div>`;
+  return html`<article class="ev" style="--g:${a.g.color}">
+    <div class="ev-time">${a.date && !a.noTime ? hour(a.date) : ''}</div>
+    <div class="ev-main">
+      <div class="ev-tags"><span class="ev-game">${a.g.short}</span>${a.fmt ? html`<span>${a.fmt}</span>` : ''}${a.budget ? html`<span class="ev-chip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="ev-chip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
+      <h4 class="ev-name"><a class="a-link" href="${a.href}">${a.name}</a></h4>
+      <p class="ev-meta"><span class="${full ? 'full' : ''}">${full ? 'Completo · lista de espera' : meta}</span>${a.places && !full ? html`<span class="ev-bar" aria-hidden="true"><i style="width:${Math.max(4, Math.min(100, Math.round((a.players || 0) / a.places * 100)))}%"></i></span>` : ''}</p>
+      ${a.more.length ? html`<p class="ev-next">Cada ${localDay(a.date, { weekday: 'long' })}. También el ${nextDates(a.more)}</p>` : ''}
+    </div>
+    <div class="ev-side">${a.price != null ? html`<span class="ev-price">${a.price ? money(a.price).replace(',00', '') : 'Gratis'}</span>` : ''}<span class="ev-cta ${a.calOnly || a.cta === 'Ver' ? 'alt' : ''}">${a.cta}</span></div>
+  </article>`;
 }
 const hour = iso => (iso ? new Date(iso).toLocaleTimeString('es-ES', { timeZone: config.tz, hour: '2-digit', minute: '2-digit' }) : '');
 
@@ -158,7 +174,7 @@ r.get('/', (req, res) => {
   const agendaPage = rows.slice((page - 1) * PER, page * PER);
   // Agrupada por días
   const days = [];
-  for (const a of agendaPage) { const l = dayLabel(a.date); const d = days[days.length - 1]; if (d && d.label === l) d.rows.push(a); else days.push({ label: l, rows: [a] }); }
+  for (const a of agendaPage) { const l = dayLabel(a.date); const d = days[days.length - 1]; if (d && d.label === l) d.rows.push(a); else days.push({ label: l, iso: a.date, rows: [a] }); }
   const pageHref = n => `/?${new URLSearchParams({ ...(game ? { juego: game } : {}), ...(n > 1 ? { pag: n } : {}) })}#proximos`;
   const results = [
     ...(game === 'commander' ? [] : data.recentTournaments(12).filter(t => !game || t.game === game).map(t => {
@@ -187,7 +203,7 @@ r.get('/', (req, res) => {
         ${live ? html`<a class="cs-porra" href="/porra"><b>Porra</b><span>¿Quién gana cada mesa? Pronostica y suma puntos</span></a>` : ''}</div>`;
     })()}
     <section id="proximos"><div class="sec-row"><h2 class="sec">Próximos torneos</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
-      ${agenda.length ? html`${days.map(d => html`<h3 class="aday">${d.label}</h3><div class="agenda">${d.rows.map(agendaRow)}</div>`)}
+      ${agenda.length ? html`<div class="sched">${days.map(dayCard)}</div>
       ${pages > 1 ? html`<nav class="pager" aria-label="Páginas de próximos torneos">
         ${page > 1 ? html`<a class="jbtn-outline" href="${pageHref(page - 1)}" rel="prev">← Anteriores</a>` : html`<span></span>`}
         <span class="pg-n">${(page - 1) * PER + 1}–${Math.min(page * PER, rows.length)} de ${rows.length}</span>

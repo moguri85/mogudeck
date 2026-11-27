@@ -1782,3 +1782,48 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
   .arow .a-side .jbtn { width: auto; min-width: 128px; margin-left: auto; }
 }
 h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display); color: var(--ink); margin: 20px 0 8px; }
+/* Próximos torneos: un bloque por día */
+.sched { display: grid; gap: 14px; }
+.dcard { display: grid; grid-template-columns: 108px 1fr; background: #fff; border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+.dcard-h { background: var(--negro, #141414); color: #fff; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 16px 10px; text-align: center; }
+.dh-rel { font: 500 14px var(--font); color: #c9c9c9; }
+.dh-num { font: 500 46px/1 var(--display); color: var(--naranja); }
+.dh-mon { font: 400 14px var(--font); color: #c9c9c9; }
+.dcard-list { min-width: 0; }
+.ev { position: relative; display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 18px 22px 18px 20px; transition: background .15s; }
+.ev + .ev { border-top: 1px solid var(--line); }
+.ev::before { content: ""; position: absolute; left: 0; top: 16px; bottom: 16px; width: 3px; border-radius: 0 3px 3px 0; background: var(--g); }
+.ev:hover { background: #faf9f7; }
+.ev:hover .ev-name { color: var(--naranja-ink, #b35500); }
+.ev-time { font: 500 21px/1 var(--display); color: var(--ink); font-variant-numeric: tabular-nums; }
+.ev-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; color: var(--muted); }
+.ev-game { font-weight: 700; color: color-mix(in srgb, var(--g) 70%, #000); }
+.ev-chip { background: #fff2e3; color: #9a4a00; padding: 2px 9px; border-radius: 99px; font-weight: 600; font-size: 12px; }
+.ev-name { margin: 4px 0 3px; font: 500 22px/1.2 var(--display); color: var(--ink); transition: color .15s; }
+.ev-name .a-link { color: inherit !important; text-decoration: none; }
+.ev-meta { margin: 0; display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
+.ev-meta .full { color: var(--warn); font-weight: 600; }
+.ev-bar { width: 84px; height: 5px; border-radius: 5px; background: #ecebe8; overflow: hidden; } .ev-bar i { display: block; height: 100%; background: var(--g); border-radius: inherit; }
+.ev-next { position: relative; z-index: 1; margin: 7px 0 0; font-size: 13.5px; color: var(--muted); }
+.ev-next a { color: var(--ink) !important; font-weight: 600; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--g) 60%, transparent); text-underline-offset: 3px; }
+.ev-next a:hover { color: var(--naranja-ink, #b35500) !important; }
+.ev-side { display: flex; align-items: center; gap: 18px; }
+.ev-price { font: 500 23px/1 var(--display); color: var(--ink); white-space: nowrap; }
+.ev-cta { display: inline-flex; align-items: center; justify-content: center; min-width: 126px; min-height: 44px; padding: 8px 18px; border-radius: 99px; background: var(--naranja); color: #141414; font: 500 17px var(--display); letter-spacing: .2px; transition: transform .15s, box-shadow .15s; }
+.ev:hover .ev-cta { box-shadow: 0 8px 18px -10px rgba(244,119,0,.9); }
+.ev-cta.alt { background: #fff; color: #141414; box-shadow: inset 0 0 0 1.5px var(--naranja); }
+.ev:hover .ev-cta.alt { background: #fff6ec; }
+.ev .a-link::after { content: ""; position: absolute; inset: 0; }
+.ev:has(.a-link:focus-visible) { outline: 3px solid rgba(244,119,0,.5); outline-offset: -3px; }
+@media (max-width: 700px) {
+  .dcard { grid-template-columns: 1fr; border-radius: 14px; }
+  .dcard-h { flex-direction: row; justify-content: flex-start; align-items: baseline; gap: 8px; padding: 10px 16px; }
+  .dh-rel { font: 500 17px var(--display); color: #fff; } .dh-num { font-size: 17px; } .dh-mon { font-size: 15px; color: var(--naranja); }
+  .ev { grid-template-columns: 50px minmax(0, 1fr); gap: 4px 12px; padding: 14px 14px 14px 16px; align-items: start; }
+  .ev-time { font-size: 18px; padding-top: 3px; }
+  .ev-name { font-size: 19px; }
+  .ev-side { grid-column: 2; justify-content: space-between; margin-top: 8px; }
+  .ev-price { font-size: 20px; } .ev-side:not(:has(.ev-price)) { justify-content: flex-end; }
+  .ev-cta { min-height: 40px; font-size: 16px; }
+}
+@media (min-width: 701px) { .dcard-h { justify-content: flex-start; padding-top: 20px; } }
