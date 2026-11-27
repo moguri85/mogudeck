@@ -1759,3 +1759,26 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .calhtml h3, .infobox .calhtml h3 { font: 700 18px/1.3 var(--font); color: var(--ink); text-transform: none; letter-spacing: 0; margin: 1em 0 .4em; }
 .calhtml h4, .infobox .calhtml h4 { font: 700 16px/1.3 var(--font); color: var(--ink); text-transform: none; letter-spacing: 0; margin: .9em 0 .35em; }
 .calhtml > :first-child { margin-top: 0; }
+/* Agenda por días, con los semanales juntos */
+.aday { font: 500 15px var(--display); color: var(--muted); margin: 18px 0 8px; letter-spacing: .2px; }
+.aday:first-of-type { margin-top: 4px; }
+.agenda { display: grid; grid-template-columns: 1fr; gap: 10px; }
+@media (min-width: 1000px) { .agenda { grid-template-columns: 1fr 1fr; } }
+.arow { position: relative; grid-template-columns: 62px 1fr 128px; align-items: center; cursor: pointer; }
+.a-time { align-self: stretch; display: grid; place-items: center; background: var(--negro); color: var(--naranja); border-radius: 12px; font: 500 19px/1 var(--display); min-height: 58px; }
+.a-link { color: inherit !important; text-decoration: none; display: block; } .a-link::after { content: ""; position: absolute; inset: 0; border-radius: inherit; }
+.a-link:focus-visible { outline: none; } .arow:has(.a-link:focus-visible) { outline: 3px solid rgba(244,119,0,.45); outline-offset: 2px; }
+.a-meta .warn { color: var(--warn); font-weight: 600; }
+.a-bar { height: 4px; border-radius: 4px; background: #eee; margin: 6px 0 2px; max-width: 220px; overflow: hidden; } .a-bar i { display: block; height: 100%; background: var(--g); }
+.a-next { position: relative; z-index: 1; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 7px; font-size: 13px; color: var(--muted); }
+.a-next a { padding: 3px 9px; border-radius: 99px; background: #f3f3f3; color: var(--ink) !important; text-decoration: none; font-weight: 500; }
+.a-next a:hover { background: color-mix(in srgb, var(--g) 18%, #fff); }
+.arow .a-side { align-items: stretch; text-align: right; } .arow .a-side .jbtn { justify-content: center; width: 100%; }
+.arow .tcard-price:empty { display: none; }
+@media (max-width: 700px) {
+  .arow { grid-template-columns: 54px 1fr; }
+  .a-time { font-size: 16px; min-height: 48px; align-self: start; }
+  .arow .a-side { grid-column: 2; flex-direction: row; align-items: center; justify-content: space-between; text-align: left; }
+  .arow .a-side .jbtn { width: auto; min-width: 128px; margin-left: auto; }
+}
+h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display); color: var(--ink); margin: 20px 0 8px; }

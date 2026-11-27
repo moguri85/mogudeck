@@ -68,6 +68,33 @@ function dateTile(iso) {
   const o = k => d.toLocaleString('es-ES', { timeZone: config.tz, ...k });
   return html`<div class="dtile"><span>${o({ weekday: 'short' })}</span><b>${o({ day: 'numeric' })}</b><span>${o({ month: 'short' })}</span></div>`;
 }
+// Agenda: formatos en español, día local, etiqueta del día y fila
+const FMT_ES = { constructed: 'Construido', sealed: 'Sellado', limited: 'Limitado', draft: 'Draft', 'booster draft': 'Draft', standard: 'Estándar', 'twin suns': 'Twin Suns', eternal: 'Eterno', premier: 'Premier', modern: 'Modern', pauper: 'Pauper', legacy: 'Legacy', pioneer: 'Pioneer', commander: 'Commander' };
+const fmtEs = f => FMT_ES[String(f || '').trim().toLowerCase()] || f || '';
+const normName = n => String(n || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]/g, '');
+const localDay = (iso, o = {}) => new Date(iso).toLocaleDateString('es-ES', { timeZone: config.tz, ...o });
+const ymd = d => d.toLocaleDateString('sv-SE', { timeZone: config.tz });
+const cap = t => t.charAt(0).toUpperCase() + t.slice(1);
+function dayLabel(iso) {
+  if (!iso) return 'Fecha por confirmar';
+  const d = ymd(new Date(iso)), today = ymd(new Date()), tomorrow = ymd(new Date(Date.now() + 864e5));
+  if (d === today) return 'Hoy';
+  if (d === tomorrow) return 'Mañana';
+  const diff = (new Date(d) - new Date(today)) / 864e5;
+  return cap(localDay(iso, diff < 7 ? { weekday: 'long', day: 'numeric' } : { weekday: 'long', day: 'numeric', month: 'long' }));
+}
+function agendaRow(a) {
+  const meta = a.calOnly ? 'Reserva en la tienda' : !a.players ? (a.places ? `${a.places} plazas` : 'Inscripción abierta') : a.places ? `${a.players}/${a.places} plazas` : `${a.players} ${a.players === 1 ? 'apuntado' : 'apuntados'}`;
+  const full = a.places && a.players >= a.places;
+  return html`<div class="arow" style="--g:${a.g.color}">
+    <div class="a-time">${a.date && !a.noTime ? hour(a.date) : '—'}</div>
+    <div class="a-info"><div class="a-top"><span class="gchip"><i></i>${a.g.short}</span>${a.fmt ? html`<span class="muted small">${a.fmt}</span>` : ''}${a.budget ? html`<span class="budgetchip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="budgetchip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
+      <a class="a-name a-link" href="${a.href}">${a.name}</a>
+      <div class="a-meta">${a.more.length ? html`<span>Cada ${localDay(a.date, { weekday: 'long' })}</span> · ` : ''}<span class="${full ? 'warn' : ''}">${meta}</span></div>
+      ${a.places ? html`<div class="a-bar" title="${meta}"><i style="width:${Math.min(100, Math.round((a.players || 0) / a.places * 100))}%"></i></div>` : ''}
+      ${a.more.length ? html`<div class="a-next"><span>Siguientes:</span>${a.more.slice(0, 4).map(m => html`<a href="${m.href}">${cap(localDay(m.date, { weekday: 'short', day: 'numeric', month: 'short' }).replace('.', ''))}</a>`)}${a.more.length > 4 ? html`<span>y ${a.more.length - 4} más</span>` : ''}</div>` : ''}</div>
+    <div class="a-side"><span class="tcard-price">${a.price != null ? (a.price ? money(a.price) : 'Gratis') : ''}</span><span class="jbtn">${a.cta}</span></div></div>`;
+}
 const hour = iso => (iso ? new Date(iso).toLocaleTimeString('es-ES', { timeZone: config.tz, hour: '2-digit', minute: '2-digit' }) : '');
 
 function liveTile({ href, color, label, name, round, roundsTotal, done, total, end, players, final }) {
@@ -92,11 +119,11 @@ r.get('/', (req, res) => {
   const agenda = [
     ...(game === 'commander' ? [] : data.upcomingTournaments(400).filter(t => !game || t.game === game).map(t => ({
       href: `/t/${t.id}`, ref: `m:${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), game: t.game, name: t.name, players: data.counts(t.id).total || 0,
-      price: t.price_cents, cta: 'Inscribirme', fmt: (JSON.parse(t.formats || '[]')[0] || ''),
+      price: t.price_cents, cta: 'Inscribirme', fmt: fmtEs(JSON.parse(t.formats || '[]')[0] || ''),
     }))),
     ...(game && game !== 'commander' ? [] : db.prepare("SELECT * FROM cmd_events WHERE public = 1 AND status = 'setup' ORDER BY start_date").all().map(e => ({
       href: `/commander/${e.id}${e.self_signup ? '#apuntarse' : ''}`, date: e.start_date, g: { short: 'Commander', color: '#7b5ea7' }, game: 'commander', ref: `c:${e.id}`, name: e.name,
-      players: C.activeCount(e.id), price: e.price_cents, cta: e.self_signup ? (e.max_players && C.activeCount(e.id) >= e.max_players ? 'Lista de espera' : 'Apuntarme') : 'Ver evento', fmt: 'Multijugador',
+      players: C.activeCount(e.id), price: e.price_cents, cta: e.self_signup ? (e.max_players && C.activeCount(e.id) >= e.max_players ? 'Lista de espera' : 'Inscribirme') : 'Ver', fmt: 'Multijugador',
       places: e.max_players,
       budget: e.budget_cents, bracket: e.bracket_max,
     }))),
@@ -113,15 +140,25 @@ r.get('/', (req, res) => {
     for (const e of cal) {
       if (P.byEvent.has(`${e.aid}|${e.day}`)) continue; // ya sale con su torneo
       if (game && e.game !== game) continue;
-      agenda.push({ href: `/evento/${e.aid}?d=${e.day}`, date: e.iso, g: melee.gameInfo(e.game), game: e.game, name: e.title, players: null, price: e.price_cents, cta: 'Ver', fmt: '', calOnly: true, noTime: !e.time });
+      agenda.push({ href: `/evento/${e.aid}?d=${e.day}`, date: e.iso, g: melee.gameInfo(e.game), game: e.game, name: e.title, players: null, price: e.price_cents, cta: 'Reservar', fmt: '', calOnly: true, noTime: !e.time });
     }
   }
   agenda.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  // Los semanales (mismo nombre, juego, día de la semana y hora) van en una sola fila con sus próximas fechas
+  const rows = [], byKey = new Map();
+  for (const a of agenda) {
+    const k = a.date ? [a.g.short, normName(a.name), localDay(a.date, { weekday: 'long' }), hour(a.date)].join('|') : null;
+    const r = k && byKey.get(k);
+    if (r) r.more.push(a); else { const n = { ...a, more: [] }; rows.push(n); if (k) byKey.set(k, n); }
+  }
   // Paginación de la agenda
   const PER = 8;
-  const pages = Math.max(1, Math.ceil(agenda.length / PER));
+  const pages = Math.max(1, Math.ceil(rows.length / PER));
   const page = Math.min(Math.max(parseInt(req.query.pag, 10) || 1, 1), pages);
-  const agendaPage = agenda.slice((page - 1) * PER, page * PER);
+  const agendaPage = rows.slice((page - 1) * PER, page * PER);
+  // Agrupada por días
+  const days = [];
+  for (const a of agendaPage) { const l = dayLabel(a.date); const d = days[days.length - 1]; if (d && d.label === l) d.rows.push(a); else days.push({ label: l, rows: [a] }); }
   const pageHref = n => `/?${new URLSearchParams({ ...(game ? { juego: game } : {}), ...(n > 1 ? { pag: n } : {}) })}#proximos`;
   const results = [
     ...(game === 'commander' ? [] : data.recentTournaments(12).filter(t => !game || t.game === game).map(t => {
@@ -149,15 +186,11 @@ r.get('/', (req, res) => {
       return html`<div class="commstrip">${bs.length ? html`<a class="cs-wanted" href="/recompensas"><b>Se busca</b><span>${bs.slice(0, 3).map(b => people.publicName(b.person_key)).join(', ')}${bs.length > 3 ? '…' : ''}</span><em>Recompensa: ${bs[0].reward}${bs.length > 1 ? ' y más' : ''}</em></a>` : ''}
         ${live ? html`<a class="cs-porra" href="/porra"><b>Porra</b><span>¿Quién gana cada mesa? Pronostica y suma puntos</span></a>` : ''}</div>`;
     })()}
-    <section id="proximos"><div class="sec-row"><h2 class="sec">Próximos torneos${agenda.length > PER ? html` <small class="muted">${agenda.length}</small>` : ''}</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
-      ${agenda.length ? html`<div class="agenda">${agendaPage.map(a => html`<a class="arow" href="${a.href}" style="--g:${a.g.color}">
-        ${dateTile(a.date)}
-        <div class="a-info"><div class="a-top"><span class="gchip"><i></i>${a.g.short}</span>${a.fmt ? html`<span class="muted small">${a.fmt}</span>` : ''}${a.budget ? html`<span class="budgetchip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="budgetchip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
-          <div class="a-name">${a.name}</div><div class="a-meta">${hour(a.date) && !a.noTime ? html`${hour(a.date)} · ` : ''}${a.calOnly ? 'Inscripción en la tienda' : a.places ? `${a.players}/${a.places} plazas` : `${a.players} inscritos`}</div></div>
-        <div class="a-side">${a.price != null ? html`<span class="tcard-price">${money(a.price)}</span>` : ''}<span class="jbtn">${a.cta}</span></div></a>`)}</div>
+    <section id="proximos"><div class="sec-row"><h2 class="sec">Próximos torneos</h2>${settings().calendar_url ? html`<a class="jbtn-outline" href="${settings().calendar_url}" rel="noopener">Calendario de la tienda →</a>` : ''}</div>
+      ${agenda.length ? html`${days.map(d => html`<h3 class="aday">${d.label}</h3><div class="agenda">${d.rows.map(agendaRow)}</div>`)}
       ${pages > 1 ? html`<nav class="pager" aria-label="Páginas de próximos torneos">
         ${page > 1 ? html`<a class="jbtn-outline" href="${pageHref(page - 1)}" rel="prev">← Anteriores</a>` : html`<span></span>`}
-        <span class="pg-n">${(page - 1) * PER + 1}–${Math.min(page * PER, agenda.length)} de ${agenda.length}</span>
+        <span class="pg-n">${(page - 1) * PER + 1}–${Math.min(page * PER, rows.length)} de ${rows.length}</span>
         ${page < pages ? html`<a class="jbtn-outline" href="${pageHref(page + 1)}" rel="next">Siguientes →</a>` : html`<span></span>`}</nav>` : ''}`
       : html`<p class="muted">No hay torneos con inscripción abierta ahora mismo.</p>`}
     </section>
