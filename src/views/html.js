@@ -176,3 +176,15 @@ module.exports = {
   html, raw, esc, json, Safe, gameArt, cssUrl, ART, richText, artStyle, fmtDate, fmtDay, money, toCents, gameBadge, statusBadge, absUrl,
   adminPage, publicPage, head, TROPHY,
 };
+
+// Botón «Traer el texto de la web de la tienda» bajo el textarea de información (si el torneo está unido a un evento del calendario)
+function calTextButton(ref) {
+  try {
+    if (!require('../db').feature('calendar')) return '';
+    const a = require('../jupcal').actFor(ref);
+    if (!a || !a.infoText) return '';
+    return html`<div class="full caltext"><button type="button" class="btn small ghost" data-caltext="${a.infoText}" onclick="var t=this.closest('form').querySelector('textarea[name=info]');if(t.value.trim()&&!confirm('¿Cambiar el texto actual por el de la web de la tienda?'))return;t.value=this.dataset.caltext;t.dispatchEvent(new Event('input'))">Traer el texto de la web de la tienda, con formato</button>
+      <small class="muted">De «${a.title}». Revísalo y guarda.</small></div>`;
+  } catch (e) { return ''; }
+}
+module.exports.calTextButton = calTextButton;

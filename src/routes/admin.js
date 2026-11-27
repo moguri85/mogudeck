@@ -245,6 +245,7 @@ r.get('/torneos/:id', (req, res) => {
         <label>Fecha y hora${t.start_date_manual ? ' (puesta a mano)' : ' (de Melee)'}<input type="datetime-local" name="start_date" value="${isoToLocal(t.start_date)}">
           <small class="muted">${t.start_date ? 'Si la cambias, se queda la tuya y Melee ya no la sobrescribe.' : 'No se ha podido leer de Melee: ponla tú. '}${t.start_date_manual ? html` <button class="link" name="fecha_melee" value="1">Volver a la de Melee</button>` : ''} <a href="/admin/torneos/${t.id}/fecha">Diagnóstico</a></small></label>
         <label class="full">Información para la página pública (premios, reglas, formato, horario…)<textarea name="info" rows="6" class="rich" placeholder="Premios: 1 sobre por victoria&#10;Formato Premier, 4 rondas de 50 min">${t.info || ''}</textarea></label>
+        ${require('../views/html').calTextButton(`m:${t.id}`)}
         <label class="full">Notas internas<textarea name="notes" rows="2">${t.notes || ''}</textarea></label>
         <label class="check-inline"><input type="checkbox" name="hidden" value="1" ${t.hidden ? 'checked' : ''}> Ocultar en la web pública, TV y estadísticas</label>
         <div class="full"><button class="btn">Guardar</button></div>

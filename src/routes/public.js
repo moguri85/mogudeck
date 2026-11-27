@@ -255,6 +255,15 @@ r.get('/evento/:aid', (req, res) => {
 });
 // Información del evento en la web de la tienda (si está publicado en el calendario y coincide en día y juego)
 // Si el torneo ya tiene su propia información, del calendario solo se muestran precio y botones (si no, sale repetido)
+// Información del torneo: si es el mismo texto que el de la web de la tienda (pegado sin formato), se muestra el de su web, con formato
+function infoHtml(ref, own) {
+  if (feature('calendar')) {
+    const J = require('../jupcal');
+    const m = J.match({ ref }), a = m && J.act(m.aid);
+    if (a && a.infoHtml && J.sameText(own, a.infoText)) return html`<div class="calhtml">${raw(a.infoHtml)}</div>`;
+  }
+  return richText(own);
+}
 function calBox(ref, ownInfo) {
   if (!feature('calendar')) return '';
   const J = require('../jupcal');
@@ -286,10 +295,10 @@ r.get('/t/:id', (req, res) => {
           ${t.status === 1 ? html`<a class="jbtn big" href="${u.view}" rel="noopener">Inscribirme en Melee</a>` : html`<a class="jbtn-outline" href="${u.view}" rel="noopener">Ver en Melee →</a>`}</div>
       </div>
     </div>
-    ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${richText(t.info)}</section>` : ''}
+    ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${infoHtml(`m:${t.id}`, t.info)}</section>` : ''}
     ${!snap.live ? calBox(`m:${t.id}`, !!t.info) : ''}
     <div id="live" data-id="${t.id}"></div>
-    ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${richText(t.info)}</section>` : ''}
+    ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${infoHtml(`m:${t.id}`, t.info)}</section>` : ''}
     ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en Melee</a></p>` : ''}
     <script>window.__SNAP = ${json(snap)};</script>
     <script src="/static/ui.js"></script><script src="/static/tournament.js"></script>
@@ -682,10 +691,10 @@ r.get('/commander/:id', (req, res) => {
     </div>
     ${signupBox(req, ev)}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status === 'setup' ? budgetBox(ev) : ''}
-    ${ev.info && ev.status !== 'running' ? html`<section class="infobox"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
+    ${ev.info && ev.status !== 'running' ? html`<section class="infobox"><h2>Información</h2>${infoHtml(`c:${ev.id}`, ev.info)}</section>` : ''}
     ${ev.status === 'setup' ? calBox(`c:${ev.id}`, !!ev.info) : ''}
     <div id="cmd" data-id="${ev.id}"></div>
-    ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
+    ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${infoHtml(`c:${ev.id}`, ev.info)}</section>` : ''}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status !== 'setup' ? budgetBox(ev) : ''}
     <script>window.__CSNAP = ${json(snap)};</script>
     <script src="/static/ui.js"></script><script src="/static/commander.js"></script>`)));

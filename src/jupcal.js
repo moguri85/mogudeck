@@ -294,6 +294,19 @@ function match({ ref }) {
   const [aid, day] = k.split('|');
   return events('e.aid = ? AND e.day = ? AND a.visible = 1', [Number(aid), day])[0] || null;
 }
+// La ficha de la tienda unida a un torneo nuestro (publicada o no), para traer su texto
+function actFor(ref) {
+  const k = ref && pairs().byRef.get(ref);
+  return k ? act(Number(k.split('|')[0])) : null;
+}
+// ¿Dos textos dicen lo mismo? (el organizador pegó el texto de su web y perdió el formato)
+function sameText(a, b) {
+  const w = t => new Set(norm(String(t || '').replace(/[*#\[\]()_-]/g, ' ')).split(/\s+/).filter(x => x.length > 2));
+  const A = w(a), B = w(b);
+  if (A.size < 5 || B.size < 5) return false;
+  let n = 0; for (const x of A) if (B.has(x)) n++;
+  return n / Math.max(A.size, B.size) >= 0.75;
+}
 const pairOf = (aid, day) => pairs().byEvent.get(`${aid}|${day}`) || null;
 function setLinks(aid, map) {
   const del = db.prepare('DELETE FROM cal_links WHERE aid = ? AND day = ?'), ins = db.prepare('INSERT OR REPLACE INTO cal_links (aid, day, target) VALUES (?, ?, ?)');
@@ -302,4 +315,4 @@ function setLinks(aid, map) {
 }
 const linksOf = aid => new Map(db.prepare('SELECT day, target FROM cal_links WHERE aid = ?').all(aid).map(l => [l.day, l.target]));
 
-module.exports = { htmlToText, pairs, pairOf, setLinks, linksOf, bustPairs, ours, FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };
+module.exports = { actFor, sameText, htmlToText, pairs, pairOf, setLinks, linksOf, bustPairs, ours, FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };
