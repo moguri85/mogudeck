@@ -265,7 +265,7 @@ r.get('/cambios', (req, res) => {
         : mine.length ? html`<p class="muted">Todavía no hay cruces con tus listas. Cuanta más gente apunte cartas, más saldrán.</p>` : ''}
       <div class="tboxes">${box('have', 'Tengo', 'Aún no has apuntado cartas para cambiar.')}${box('want', 'Busco', 'Aún no has apuntado cartas que buscas.')}</div>`
       : loginHint(req, 'Entra en tu cuenta para apuntar tus cartas y ver los cruces.')}
-    <section id="todas"><h2 class="sec">Lo que hay en la tienda</h2>
+    <section id="todas"><h2 class="sec">Lo que tienen y buscan los demás</h2>
       <form method="get" action="/cambios#todas" class="filters tfil"><input name="q" value="${q}" placeholder="Buscar carta"><select name="juego"><option value="">Todos los juegos</option>${K.TRADE_GAMES.map(([k, l]) => html`<option value="${k}" ${k === game ? 'selected' : ''}>${l}</option>`)}</select><button class="jbtn-outline">Buscar</button></form>
       ${browse.length ? html`<div class="tbrowse">${browse.map(t => html`<div class="trow"><span class="tk ${t.kind}">${t.kind === 'have' ? 'Tiene' : 'Busca'}</span>${gchip(t.game)}<span class="tc">${t.qty > 1 ? `${t.qty}× ` : ''}${t.card}</span><span class="muted small">${t.who}</span></div>`)}</div>`
         : html`<p class="muted">${q ? `Nadie ha apuntado «${q}».` : 'Aún no hay cartas apuntadas.'}</p>`}</section>`));
