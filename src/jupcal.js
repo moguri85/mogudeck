@@ -68,7 +68,7 @@ function cleanHtml(h) {
   return String(h || '').replace(/<(script|style|iframe)[\s\S]*?<\/\1>/gi, '')
     .replace(/<(\/?)([a-z0-9]+)([^>]*)>/gi, (m, sl, tag, attrs) => {
       tag = tag.toLowerCase();
-      if (!ok.has(tag)) return tag === 'h1' || tag === 'h2' ? `<${sl}h3>` : '';
+      if (!ok.has(tag)) return tag === 'h1' || tag === 'h2' ? `<${sl}h3>` : tag === 'h5' || tag === 'h6' ? `<${sl}h4>` : '';
       if (tag === 'a' && !sl) { const href = (attrs.match(/href="(https?:\/\/[^"]+)"/i) || [])[1]; return href ? `<a href="${href.replace(/"/g, '')}" rel="noopener" target="_blank">` : '<a>'; }
       return `<${sl}${tag}>`;
     }).replace(/\r/g, '').replace(/\n{3,}/g, '\n\n').trim().slice(0, 20000);
@@ -148,12 +148,22 @@ const today = () => new Date().toLocaleDateString('sv-SE', { timeZone: config.tz
 // Si el campo está fijado (lock), se queda lo nuestro aunque su web cambie ---
 const FIELDS = ['title', 'game', 'price', 'info', 'img', 'signup'];
 const esc = t => String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-// HTML de su web → texto para editar
-const htmlToText = h => decode(String(h || '').replace(/<li[^>]*>/gi, '- ').replace(/<\/(p|li|h3|h4|ul|ol)>|<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ''))
-  .replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
-// Texto editado → HTML sencillo (párrafos, saltos y enlaces)
-const textToHtml = t => esc(String(t || '').trim()).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" rel="noopener" target="_blank">$1</a>')
-  .split(/\n{2,}/).map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('');
+// HTML de su web → texto con formato para editar (negrita, cursiva, títulos, listas y enlaces), sin perder estilos
+function htmlToText(h) {
+  let s = cleanHtml(h).replace(/\s+/g, ' ');
+  s = s.replace(/<li>\s*<p>([\s\S]*?)<\/p>\s*<\/li>/g, '<li>$1</li>').replace(/<(h3|h4)>\s*<(strong|b)>([\s\S]*?)<\/\2>\s*<\/\1>/g, '<$1>$3</$1>');
+  const mark = (tag, m) => { const re = new RegExp(`<(${tag})>([\\s\\S]*?)</\\1>`, 'g'); s = s.replace(re, (x, t, inner) => {
+    const lead = /^\s/.test(inner) ? ' ' : '', trail = /\s$/.test(inner) ? ' ' : '', core = inner.trim();
+    return core ? `${lead}${m}${core}${m}${trail}` : inner; }); };
+  for (let k = 0; k < 2; k++) { mark('em|i', '*'); mark('strong|b', '**'); }
+  s = s.replace(/<a href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/g, (x, u, t) => { t = t.replace(/<[^>]+>/g, '').trim(); return !t || t === u ? u : `[${t}](${u})`; });
+  s = s.replace(/<ol>([\s\S]*?)<\/ol>/g, (x, inner) => { let n = 0; return '\n\n' + inner.replace(/<li>/g, () => `\n${++n}. `).replace(/<\/li>/g, '') + '\n\n'; });
+  s = s.replace(/<ul>([\s\S]*?)<\/ul>/g, (x, inner) => '\n\n' + inner.replace(/<li>/g, '\n- ').replace(/<\/li>/g, '') + '\n\n');
+  s = s.replace(/<h3>/g, '\n\n## ').replace(/<h4>/g, '\n\n### ').replace(/<\/(h3|h4)>/g, '\n\n').replace(/<br>/g, '\n').replace(/<\/p>/g, '\n\n').replace(/<[^>]+>/g, '');
+  return decode(s).replace(/ /g, ' ').split('\n').map(l => l.trim().replace(/^(-|\d+\.|#{2,3})\s+/, '$1 ')).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
+// Texto editado → HTML con el mismo formato que el resto de la web
+const textToHtml = t => require('../public/rich.js').richMd(t);
 const cents = p => { const m = String(p || '').match(/(\d+(?:[.,]\d{1,2})?)/); return m ? Math.round(Number(m[1].replace(',', '.')) * 100) : (/gratis|gratuit|free/i.test(p || '') ? 0 : null); };
 const srcGame = a => a.game || (db.prepare('SELECT game FROM cal_events WHERE aid = ? ORDER BY day DESC LIMIT 1').get(a.aid) || {}).game || 'other';
 // Valor de su web de cada campo (como se edita)
@@ -292,4 +302,4 @@ function setLinks(aid, map) {
 }
 const linksOf = aid => new Map(db.prepare('SELECT day, target FROM cal_links WHERE aid = ?').all(aid).map(l => [l.day, l.target]));
 
-module.exports = { pairs, pairOf, setLinks, linksOf, bustPairs, ours, FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };
+module.exports = { htmlToText, pairs, pairOf, setLinks, linksOf, bustPairs, ours, FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };

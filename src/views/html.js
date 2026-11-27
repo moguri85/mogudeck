@@ -64,11 +64,10 @@ function artStyle(code) {
   return { cls: custom ? 'cover' : 'art', style: raw(`background-image:${cssUrl(gameArt(code))}`) };
 }
 
-// Texto libre del organizador: escapado, saltos de línea y enlaces
+// Admite formato sencillo: **negrita**, *cursiva*, ## Título, - lista, 1. lista, [texto](https://…)
 function richText(t) {
   if (!t) return '';
-  const safe = esc(String(t)).replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" rel="noopener nofollow" target="_blank">$1</a>');
-  return raw(safe.split(/\n{2,}/).map(par => `<p>${par.replace(/\n/g, '<br>')}</p>`).join(''));
+  return raw(`<div class="calhtml">${require('../../public/rich.js').richMd(t)}</div>`);
 }
 
 function gameBadge(code) {
@@ -140,6 +139,7 @@ ${f ? html`<div class="flash ${req.query.err ? 'err' : ''}">${f}</div>` : ''}
 ${body}
 </main></div>
 <script src="/static/app.js"></script>
+<script src="/static/rich.js"></script>
 </body></html>`;
 }
 

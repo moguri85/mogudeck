@@ -136,7 +136,7 @@ function eventForm(ev, action) {
       <label>…del jugador<select name="combo_seat">${[[3, '3º en jugar'], [1, '1º en jugar'], [2, '2º en jugar'], [4, '4º en jugar']].map(([n, t]) => html`<option value="${n}" ${(ev.combo_seat || (ev.id ? 1 : 3)) === n ? 'selected' : ''}>${t}</option>`)}</select></label>
       <small class="muted full">Ejemplo: turno 5 del 3º jugador. En la vuelta 5, el 1º y el 2º aún no pueden y el 3º y el 4º ya sí; desde la vuelta 6, todos.</small>
     </fieldset>
-    <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="4">${ev.info || ''}</textarea></label>
+    <label class="full">Información para la página pública (premios, reglas, horario…)<textarea name="info" rows="6" class="rich">${ev.info || ''}</textarea></label>
     <div class="full"><button class="btn">Guardar</button></div></form>
     <script>(function(){var f=document.currentScript.previousElementSibling.querySelector('[data-scoring]');if(!f)return;
       var mode=f.querySelector('[data-mode]');function show(){f.dataset.mode=mode.value}mode.onchange=show;show();

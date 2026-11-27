@@ -63,7 +63,7 @@ r.get('/calendario/:aid(\\d+)', (req, res) => {
   const val = f => (f === 'info' ? a.infoText : f === 'game' ? a.game : a[f]) || '';
   const input = f => f === 'game'
     ? html`<select name="game">${GAMES.map(g => html`<option value="${g}" ${val(f) === g ? 'selected' : ''}>${melee.gameInfo(g).label}</option>`)}</select>`
-    : f === 'info' ? html`<textarea name="info" rows="12">${val(f)}</textarea>`
+    : f === 'info' ? html`<textarea name="info" rows="12" class="rich">${val(f)}</textarea>`
       : html`<input name="${f}" value="${val(f)}" maxlength="300">`;
   const srcShow = f => (f === 'game' ? melee.gameInfo(a.src.game).label : a.src[f]) || '(vacío)';
   const field = f => {
