@@ -7,6 +7,9 @@ const GAMES = {
   CyberpunkTCG: { label: 'Cyberpunk TCG', short: 'Cyberpunk', color: '#ff2e88' },
   MagicTheGathering: { label: 'Magic: The Gathering', short: 'Magic', color: '#7b5ea7' },
   Riftbound: { label: 'Riftbound', short: 'Riftbound', color: '#2a9df4' },
+  // Solo vienen del calendario de la web de la tienda
+  OnePiece: { label: 'One Piece Card Game', short: 'One Piece', color: '#e0352b' },
+  other: { label: 'Otros juegos', short: 'Otros', color: '#6b7280' },
 };
 function gameInfo(code) {
   if (code === 'commander') return { label: 'Commander', short: 'Commander', color: '#7b5ea7' };

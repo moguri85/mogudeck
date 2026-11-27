@@ -85,21 +85,38 @@ r.get('/', (req, res) => {
   const game = req.query.juego || '';
   const live = data.liveTournaments().filter(t => !game || t.game === game);
   const cmdNow = game && game !== 'commander' ? [] : C.liveEvents();
-  const games = [...new Set(db.prepare('SELECT DISTINCT game FROM tournaments WHERE hidden = 0 AND status != 0').all().map(x => x.game))];
+  const games = [...new Set([...db.prepare('SELECT DISTINCT game FROM tournaments WHERE hidden = 0 AND status != 0').all().map(x => x.game),
+    ...(feature('calendar') ? require('../jupcal').upcoming(300).map(e => e.game) : [])])];
   const hasCmd = db.prepare('SELECT COUNT(*) c FROM cmd_events WHERE public = 1').get().c > 0;
   // Agenda: torneos de Melee con inscripción + Commander por empezar
   const agenda = [
     ...(game === 'commander' ? [] : data.upcomingTournaments(400).filter(t => !game || t.game === game).map(t => ({
-      href: `/t/${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), name: t.name, players: data.counts(t.id).total || 0,
+      href: `/t/${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), game: t.game, name: t.name, players: data.counts(t.id).total || 0,
       price: t.price_cents, cta: 'Inscribirme', fmt: (JSON.parse(t.formats || '[]')[0] || ''),
     }))),
     ...(game && game !== 'commander' ? [] : db.prepare("SELECT * FROM cmd_events WHERE public = 1 AND status = 'setup' ORDER BY start_date").all().map(e => ({
-      href: `/commander/${e.id}${e.self_signup ? '#apuntarse' : ''}`, date: e.start_date, g: { short: 'Commander', color: '#7b5ea7' }, name: e.name,
+      href: `/commander/${e.id}${e.self_signup ? '#apuntarse' : ''}`, date: e.start_date, g: { short: 'Commander', color: '#7b5ea7' }, game: 'commander', name: e.name,
       players: C.activeCount(e.id), price: e.price_cents, cta: e.self_signup ? (e.max_players && C.activeCount(e.id) >= e.max_players ? 'Lista de espera' : 'Apuntarme') : 'Ver evento', fmt: 'Multijugador',
       places: e.max_players,
       budget: e.budget_cents, bracket: e.bracket_max,
     }))),
-  ].sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
+  ];
+  // Eventos publicados del calendario de la web de la tienda: se juntan con su torneo si coincide (día y juego) o salen solos
+  if (feature('calendar')) {
+    const J = require('../jupcal');
+    const cal = J.upcoming(300);
+    const used = new Set();
+    for (const a of agenda) {
+      const m = J.match({ iso: a.date, game: a.game, name: a.name }, cal.filter(e => !used.has(`${e.aid}|${e.day}`)));
+      if (m) { used.add(`${m.aid}|${m.day}`); a.cal = m; if (a.price == null && m.price_cents != null) a.price = m.price_cents; }
+    }
+    for (const e of cal) {
+      if (used.has(`${e.aid}|${e.day}`)) continue;
+      if (game && !(e.game === game || (game === 'commander' && /commander|edh/i.test(e.title)))) continue;
+      agenda.push({ href: `/evento/${e.aid}?d=${e.day}`, date: e.iso, g: melee.gameInfo(e.game), game: e.game, name: e.title, players: null, price: e.price_cents, cta: 'Ver', fmt: '', calOnly: true, noTime: !e.time });
+    }
+  }
+  agenda.sort((a, b) => (a.date || '9999').localeCompare(b.date || '9999'));
   // Paginación de la agenda
   const PER = 8;
   const pages = Math.max(1, Math.ceil(agenda.length / PER));
@@ -136,7 +153,7 @@ r.get('/', (req, res) => {
       ${agenda.length ? html`<div class="agenda">${agendaPage.map(a => html`<a class="arow" href="${a.href}" style="--g:${a.g.color}">
         ${dateTile(a.date)}
         <div class="a-info"><div class="a-top"><span class="gchip"><i></i>${a.g.short}</span>${a.fmt ? html`<span class="muted small">${a.fmt}</span>` : ''}${a.budget ? html`<span class="budgetchip">Mazo máx. ${money(a.budget)}</span>` : ''}${a.bracket ? html`<span class="budgetchip">Bracket ≤ ${a.bracket === 2 ? '1-2' : a.bracket}</span>` : ''}</div>
-          <div class="a-name">${a.name}</div><div class="a-meta">${hour(a.date) ? html`${hour(a.date)} · ` : ''}${a.places ? `${a.players}/${a.places} plazas` : `${a.players} inscritos`}</div></div>
+          <div class="a-name">${a.name}</div><div class="a-meta">${hour(a.date) && !a.noTime ? html`${hour(a.date)} · ` : ''}${a.calOnly ? 'Inscripción en la tienda' : a.places ? `${a.players}/${a.places} plazas` : `${a.players} inscritos`}</div></div>
         <div class="a-side">${a.price != null ? html`<span class="tcard-price">${money(a.price)}</span>` : ''}<span class="jbtn">${a.cta}</span></div></a>`)}</div>
       ${pages > 1 ? html`<nav class="pager" aria-label="Páginas de próximos torneos">
         ${page > 1 ? html`<a class="jbtn-outline" href="${pageHref(page - 1)}" rel="prev">← Anteriores</a>` : html`<span></span>`}
@@ -166,6 +183,41 @@ function publicTournament(id) {
   return t;
 }
 
+r.get('/evento/:aid', (req, res) => {
+  const J = require('../jupcal');
+  const a = feature('calendar') ? J.act(Number(req.params.aid)) : null;
+  if (!a || !a.visible) return res.status(404).send(String(publicPage('No encontrado', html`<p>Evento no encontrado.</p><p><a href="/">← Próximos torneos</a></p>`)));
+  const dates = J.datesOf(a.aid);
+  const game = (db.prepare('SELECT game FROM cal_events WHERE aid = ? ORDER BY day DESC LIMIT 1').get(a.aid) || {}).game || 'other';
+  const g = melee.gameInfo(game);
+  const dl = d => { const t = new Date(d.day + 'T12:00:00').toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long' }); return t.charAt(0).toUpperCase() + t.slice(1) + (d.time ? ` · ${d.time}` : ''); };
+  const sel = String(req.query.d || '');
+  res.send(String(publicPage(a.title, html`
+    <div class="thead nomedia" style="--g:${g.color}"><div class="thead-info">
+      <div class="tcard-badges static"><span class="jbadge">${g.label}</span></div>
+      <h1>${a.title}</h1>
+      ${dates.length ? html`<p class="tdate">${dl(dates.find(d => d.day === sel) || dates[0])}</p>` : html`<p class="tdate">Sin fechas próximas</p>`}
+      <div class="thead-cta">${a.price ? html`<span class="tcard-price big">${a.price_cents === 0 ? 'Gratis' : a.price}</span>` : ''}
+        ${a.signup ? html`<a class="jbtn big" href="${a.signup}" rel="noopener" target="_blank">Reservar plaza en la tienda</a>` : ''}</div></div></div>
+    ${dates.length > 1 ? html`<section class="infobox"><h2>Próximas fechas</h2><ul class="caldates">${dates.slice(0, 12).map(d => html`<li class="${d.day === sel ? 'on' : ''}">${dl(d)}</li>`)}</ul></section>` : ''}
+    ${a.info ? html`<section class="infobox"><h2>Información</h2><div class="calhtml">${raw(a.info)}</div></section>` : ''}
+    ${a.img ? html`<p class="calimg"><img src="${a.img}" alt="Cartel de ${a.title}" loading="lazy"></p>` : ''}
+    <p class="small muted">Información de <a href="${a.url}" rel="noopener" target="_blank">jupiterjuegos.com</a>. La inscripción y el pago se hacen en su web o en la tienda.</p>
+    <p><a href="/">← Próximos torneos</a></p>`)));
+});
+// Información del evento en la web de la tienda (si está publicado en el calendario y coincide en día y juego)
+function calBox(iso, game, name) {
+  if (!feature('calendar')) return '';
+  const J = require('../jupcal');
+  const m = J.match({ iso, game, name });
+  if (!m) return '';
+  const a = J.act(m.aid) || {};
+  return html`<section class="infobox calbox"><h2>En la web de la tienda</h2>
+    <div class="calbox-top">${a.price ? html`<span class="tcard-price big">${a.price_cents === 0 ? 'Gratis' : a.price}</span>` : ''}
+      ${a.signup ? html`<a class="jbtn" href="${a.signup}" rel="noopener" target="_blank">Reservar plaza en la tienda</a>` : ''}
+      ${a.url ? html`<a class="jbtn-outline" href="${a.url}" rel="noopener" target="_blank">Ver en jupiterjuegos.com</a>` : ''}</div>
+    ${a.info ? html`<details class="calinfo"><summary>Reglas, premios y más información</summary><div class="calhtml">${raw(a.info)}</div></details>` : ''}</section>`;
+}
 r.get('/t/:id', (req, res) => {
   const t = publicTournament(Number(req.params.id));
   if (!t) return res.status(404).send(String(publicPage('No encontrado', html`<p>Torneo no encontrado.</p>`)));
@@ -186,6 +238,7 @@ r.get('/t/:id', (req, res) => {
       </div>
     </div>
     ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${richText(t.info)}</section>` : ''}
+    ${!snap.live ? calBox(t.start_date, t.game, t.name) : ''}
     <div id="live" data-id="${t.id}"></div>
     ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${richText(t.info)}</section>` : ''}
     ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en Melee</a></p>` : ''}
@@ -581,6 +634,7 @@ r.get('/commander/:id', (req, res) => {
     ${signupBox(req, ev)}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status === 'setup' ? budgetBox(ev) : ''}
     ${ev.info && ev.status !== 'running' ? html`<section class="infobox"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
+    ${ev.status === 'setup' ? calBox(ev.start_date, 'commander', ev.name) : ''}
     <div id="cmd" data-id="${ev.id}"></div>
     ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status !== 'setup' ? budgetBox(ev) : ''}

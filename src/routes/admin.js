@@ -60,6 +60,7 @@ r.use(/^\/torneos\/\d+\/premio/, needs('prizes'));
 
 r.use('/commander', require('./commander-admin'));
 r.use('/', require('./comunidad-admin'));
+r.use('/', require('./calendario-admin'));
 
 // ---------------- Inicio ----------------
 r.get('/', (req, res) => {
@@ -1112,6 +1113,7 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
     ${cb('feature_trades', 'Tengo / Busco: listas de cambio de cartas de todos los juegos')}
     ${cb('feature_loans', 'Mazos de préstamo: los jugadores prestan y piden mazos')}
     ${cb('feature_moments', 'Momentos: fotos de los jugadores en la TV (con revisión del staff antes de salir)')}
+    ${cb('feature_calendar', 'Calendario de la web de la tienda: trae los eventos de «Enlace al calendario de la tienda» (entran como borrador)')}
     ${cb('feature_lfg', 'Busco mesa: los jugadores quedan para partidas casuales en la tienda')}
     ${cb('feature_casual_league', 'Liga casual: las partidas del contador casual cuentan si todos las confirman con su cuenta')}
     ${cb('show_game_img', 'Imagen o logo del juego en las tarjetas de torneo (si está desactivado, solo se ve la imagen propia del torneo en Melee)')}
@@ -1157,7 +1159,7 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
 });
 r.post('/ajustes', auth.requireAdmin, (req, res) => {
   const checks = ['show_real_names', 'notify_new', 'notify_rounds', 'notify_final', 'feature_prizes', 'feature_cash', 'feature_profiles', 'feature_meta', 'show_game_img',
-    'feature_badges', 'feature_porra', 'feature_bounties', 'feature_trades', 'feature_loans', 'feature_moments', 'feature_lfg', 'feature_casual_league'];
+    'feature_badges', 'feature_porra', 'feature_bounties', 'feature_trades', 'feature_loans', 'feature_moments', 'feature_lfg', 'feature_casual_league', 'feature_calendar'];
   for (const k of Object.keys(DEFAULT_SETTINGS)) {
     if (checks.includes(k)) setSetting(k, req.body[k] ? '1' : '0');
     else if (k in req.body) setSetting(k, String(req.body[k]).trim());
