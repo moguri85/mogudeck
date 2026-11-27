@@ -91,11 +91,11 @@ r.get('/', (req, res) => {
   // Agenda: torneos de Melee con inscripción + Commander por empezar
   const agenda = [
     ...(game === 'commander' ? [] : data.upcomingTournaments(400).filter(t => !game || t.game === game).map(t => ({
-      href: `/t/${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), game: t.game, name: t.name, players: data.counts(t.id).total || 0,
+      href: `/t/${t.id}`, ref: `m:${t.id}`, date: t.start_date, g: melee.gameInfo(t.game), game: t.game, name: t.name, players: data.counts(t.id).total || 0,
       price: t.price_cents, cta: 'Inscribirme', fmt: (JSON.parse(t.formats || '[]')[0] || ''),
     }))),
     ...(game && game !== 'commander' ? [] : db.prepare("SELECT * FROM cmd_events WHERE public = 1 AND status = 'setup' ORDER BY start_date").all().map(e => ({
-      href: `/commander/${e.id}${e.self_signup ? '#apuntarse' : ''}`, date: e.start_date, g: { short: 'Commander', color: '#7b5ea7' }, game: 'commander', name: e.name,
+      href: `/commander/${e.id}${e.self_signup ? '#apuntarse' : ''}`, date: e.start_date, g: { short: 'Commander', color: '#7b5ea7' }, game: 'commander', ref: `c:${e.id}`, name: e.name,
       players: C.activeCount(e.id), price: e.price_cents, cta: e.self_signup ? (e.max_players && C.activeCount(e.id) >= e.max_players ? 'Lista de espera' : 'Apuntarme') : 'Ver evento', fmt: 'Multijugador',
       places: e.max_players,
       budget: e.budget_cents, bracket: e.bracket_max,
@@ -105,13 +105,13 @@ r.get('/', (req, res) => {
   if (feature('calendar')) {
     const J = require('../jupcal');
     const cal = J.upcoming(300);
-    const used = new Set();
+    const P = J.pairs();
     for (const a of agenda) {
-      const m = J.match({ iso: a.date, game: a.game, name: a.name }, cal.filter(e => !used.has(`${e.aid}|${e.day}`)));
-      if (m) { used.add(`${m.aid}|${m.day}`); a.cal = m; if (a.price == null && m.price_cents != null) a.price = m.price_cents; }
+      const k = P.byRef.get(a.ref), m = k && cal.find(e => `${e.aid}|${e.day}` === k);
+      if (m) { a.cal = m; if (a.price == null && m.price_cents != null) a.price = m.price_cents; }
     }
     for (const e of cal) {
-      if (used.has(`${e.aid}|${e.day}`)) continue;
+      if (P.byEvent.has(`${e.aid}|${e.day}`)) continue; // ya sale con su torneo
       if (game && e.game !== game) continue;
       agenda.push({ href: `/evento/${e.aid}?d=${e.day}`, date: e.iso, g: melee.gameInfo(e.game), game: e.game, name: e.title, players: null, price: e.price_cents, cta: 'Ver', fmt: '', calOnly: true, noTime: !e.time });
     }
@@ -205,10 +205,10 @@ r.get('/evento/:aid', (req, res) => {
     <p><a href="/">← Próximos torneos</a></p>`)));
 });
 // Información del evento en la web de la tienda (si está publicado en el calendario y coincide en día y juego)
-function calBox(iso, game, name) {
+function calBox(ref) {
   if (!feature('calendar')) return '';
   const J = require('../jupcal');
-  const m = J.match({ iso, game, name });
+  const m = J.match({ ref });
   if (!m) return '';
   const a = J.act(m.aid) || {};
   return html`<section class="infobox calbox"><h2>En la web de la tienda</h2>
@@ -237,7 +237,7 @@ r.get('/t/:id', (req, res) => {
       </div>
     </div>
     ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${richText(t.info)}</section>` : ''}
-    ${!snap.live ? calBox(t.start_date, t.game, t.name) : ''}
+    ${!snap.live ? calBox(`m:${t.id}`) : ''}
     <div id="live" data-id="${t.id}"></div>
     ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${richText(t.info)}</section>` : ''}
     ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en Melee</a></p>` : ''}
@@ -633,7 +633,7 @@ r.get('/commander/:id', (req, res) => {
     ${signupBox(req, ev)}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status === 'setup' ? budgetBox(ev) : ''}
     ${ev.info && ev.status !== 'running' ? html`<section class="infobox"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
-    ${ev.status === 'setup' ? calBox(ev.start_date, 'commander', ev.name) : ''}
+    ${ev.status === 'setup' ? calBox(`c:${ev.id}`) : ''}
     <div id="cmd" data-id="${ev.id}"></div>
     ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${richText(ev.info)}</section>` : ''}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status !== 'setup' ? budgetBox(ev) : ''}

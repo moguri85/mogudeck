@@ -1744,3 +1744,8 @@ body.lifep { margin: 0; background: #0d0d0d; color: #fff; height: 100dvh; overfl
 .calfield textarea, .calfield select { width: 100%; border-radius: 12px; border: 1px solid #d6d6d6; padding: 10px 14px; font: 400 15px/1.5 var(--font); }
 .calfield select { min-height: 48px; }
 .calfield .check-inline { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 14px; } .calfield .check-inline input { margin: 0; width: 18px; height: 18px; flex: none; }
+.caldts { color: var(--muted); } .caldts span:not(:last-child)::after { content: ' · '; color: var(--muted); font-weight: 400; } .caldts span.on { color: var(--ok); } .caldts b { font-weight: 600; }
+.callinks { display: grid; gap: 8px; margin: 10px 0 18px; padding: 12px; border-radius: 12px; background: #f6f6f6; } .callinks h3 { margin: 0; font-size: 17px; }
+.callinks label { display: grid; grid-template-columns: 150px 1fr; gap: 10px; align-items: center; font-size: 14px; } .callinks select { min-height: 40px; border-radius: 10px; border: 1px solid #d6d6d6; padding: 6px 10px; max-width: 100%; }
+@media (max-width: 600px) { .callinks label { grid-template-columns: 1fr; gap: 4px; } }
+.callinks .btn { justify-self: start; }

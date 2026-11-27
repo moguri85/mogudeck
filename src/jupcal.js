@@ -15,6 +15,8 @@ addColumn('cal_acts', 'first_seen', 'TEXT');
 // Juego según su web (Commander se detecta por el título) y lo que la tienda ha cambiado a mano: { campo: { v: valor, base: valor de su web al editarlo } }
 addColumn('cal_acts', 'game', 'TEXT');
 addColumn('cal_acts', 'edits', 'TEXT');
+// Unión a mano de una fecha del calendario con un torneo de esta web ('m:<id>' Melee, 'c:<id>' Commander, 'none' = que salga aparte)
+db.exec('CREATE TABLE IF NOT EXISTS cal_links (aid INTEGER NOT NULL, day TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY (aid, day))');
 
 const DEFAULT_URL = 'https://jupiterjuegos.com/tiendas/valencia/';
 // La misma URL que «Enlace al calendario de la tienda» en Ajustes, si es una página de tienda de su web
@@ -118,7 +120,7 @@ async function sync({ force = false } = {}) {
       } catch (e) { log('warn', `Calendario: actividad ${aid}: ${e.message}`); }
       await new Promise(r => setTimeout(r, 500));
     }
-    lastError = null;
+    lastError = null; bustPairs();
     setSetting('cal_synced_at', new Date().toISOString());
     setSetting('cal_count', String(all.length));
   } catch (e) {
@@ -196,6 +198,7 @@ function setEdits(aid, body) {
     ed[f] = { v, base: src[f], lock };
   }
   db.prepare('UPDATE cal_acts SET edits = ? WHERE aid = ?').run(Object.keys(ed).length ? JSON.stringify(ed) : null, aid);
+  bustPairs();
 }
 // Quitar lo editado de un campo (vuelve a mandar su web) o aceptar que se queda aunque su web haya cambiado
 function resetField(aid, f, keep = false) {
@@ -224,22 +227,69 @@ function activities() {
   return db.prepare('SELECT * FROM cal_acts').all().map(a => ({ ...eff(a), dates: ds.all(a.aid, today()) }))
     .filter(a => a.dates.length || a.visible).sort((x, y) => ((x.dates[0] || {}).day || '9').localeCompare((y.dates[0] || {}).day || '9'));
 }
-const setVisible = (aid, on) => db.prepare('UPDATE cal_acts SET visible = ? WHERE aid = ?').run(on ? 1 : 0, aid);
+const setVisible = (aid, on) => { db.prepare('UPDATE cal_acts SET visible = ? WHERE aid = ?').run(on ? 1 : 0, aid); bustPairs(); };
 const act = aid => eff(db.prepare('SELECT * FROM cal_acts WHERE aid = ?').get(aid));
 const datesOf = aid => db.prepare('SELECT day, time FROM cal_events WHERE aid = ? AND day >= ? ORDER BY day').all(aid, today());
 
-// ¿Este torneo nuestro (Melee o Commander) es un evento del calendario? Mismo día y juego; si hay varios, el de nombre más parecido
+// --- Unir fechas del calendario con torneos de esta web (Melee y Commander) ---
+// Primero lo unido a mano; luego automático: mismo día y juego y, si hay varios, el de nombre más parecido
 const norm = s => String(s || '').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9 ]/g, ' ');
-const words = s => new Set(norm(s).split(/\s+/).filter(w => w.length > 2 && !['jupiter', 'valencia', 'torneo', 'commander'].includes(w)));
-function match({ iso, game, name }, list) {
-  if (!iso) return null;
-  const day = new Date(iso).toLocaleDateString('sv-SE', { timeZone: config.tz });
-  const cands = (list || events('e.day = ? AND a.visible = 1', [day])).filter(e => e.day === day && e.game === game);
-  if (!cands.length) return null;
-  const w = words(name);
-  const score = e => { let n = 0; for (const x of words(e.title)) if (w.has(x)) n++; return n; };
-  const best = cands.map(e => ({ e, s: score(e) })).sort((a, b) => b.s - a.s)[0];
-  return best.s > 0 || cands.length === 1 ? best.e : null;
+const STOP = new Set(['jupiter', 'valencia', 'torneo', 'commander', 'semanal']);
+const words = s => new Set(norm(s).split(/\s+/).filter(w => w.length > 2 && !STOP.has(w) || /^f2p$|^b\d$/.test(w)));
+const sim = (a, b) => { const wa = words(a), wb = words(b); let n = 0; for (const x of wb) if (wa.has(x)) n++; return n - Math.abs(wa.size - wb.size) * 0.1; };
+const dayOf = iso => (iso ? new Date(iso).toLocaleDateString('sv-SE', { timeZone: config.tz }) : null);
+// Torneos nuestros que pueden tener fecha en el calendario
+function ours() {
+  const out = [];
+  for (const t of db.prepare("SELECT id, name, game, start_date FROM tournaments WHERE hidden = 0 AND status IN (1, 2) AND start_date >= datetime('now', '-1 day')").all())
+    out.push({ ref: `m:${t.id}`, name: t.name, game: t.game, iso: t.start_date, day: dayOf(t.start_date), href: `/t/${t.id}`, kind: 'Melee' });
+  try {
+    for (const e of db.prepare("SELECT id, name, start_date FROM cmd_events WHERE status IN ('setup', 'running') AND start_date IS NOT NULL AND start_date >= datetime('now', '-1 day')").all())
+      out.push({ ref: `c:${e.id}`, name: e.name, game: 'commander', iso: e.start_date, day: dayOf(e.start_date), href: `/commander/${e.id}`, kind: 'Commander' });
+  } catch (e) { /* sin commander */ }
+  return out;
 }
+let pcache = null, pAt = 0;
+const bustPairs = () => { pcache = null; };
+// { byEvent: Map('aid|day' → {ref, manual, t}), byRef: Map(ref → 'aid|day'), ours }
+function pairs() {
+  if (pcache && Date.now() - pAt < 60e3) return pcache;
+  const evs = events('e.day >= ?', [new Date(Date.now() - 864e5).toISOString().slice(0, 10)]);
+  const ts = ours(), tByRef = new Map(ts.map(t => [t.ref, t]));
+  const byEvent = new Map(), byRef = new Map(), manual = new Map();
+  for (const l of db.prepare('SELECT * FROM cal_links').all()) manual.set(`${l.aid}|${l.day}`, l.target);
+  for (const [k, target] of manual) {
+    if (target === 'none' || !tByRef.has(target) || byRef.has(target)) continue;
+    byEvent.set(k, { ref: target, manual: true, t: tByRef.get(target) }); byRef.set(target, k);
+  }
+  // Automático: todas las parejas posibles ordenadas por parecido del nombre
+  const cand = [];
+  for (const e of evs) {
+    const k = `${e.aid}|${e.day}`;
+    if (manual.has(k)) continue;
+    for (const t of ts) if (t.day === e.day && t.game === e.game && !byRef.has(t.ref)) cand.push({ k, t, s: sim(t.name, e.title) });
+  }
+  cand.sort((a, b) => b.s - a.s);
+  for (const c of cand) {
+    if (byEvent.has(c.k) || byRef.has(c.t.ref)) continue;
+    byEvent.set(c.k, { ref: c.t.ref, manual: false, t: c.t }); byRef.set(c.t.ref, c.k);
+  }
+  pcache = { byEvent, byRef, ours: ts }; pAt = Date.now();
+  return pcache;
+}
+// El evento del calendario (publicado) unido a un torneo nuestro
+function match({ ref }) {
+  const k = ref && pairs().byRef.get(ref);
+  if (!k) return null;
+  const [aid, day] = k.split('|');
+  return events('e.aid = ? AND e.day = ? AND a.visible = 1', [Number(aid), day])[0] || null;
+}
+const pairOf = (aid, day) => pairs().byEvent.get(`${aid}|${day}`) || null;
+function setLinks(aid, map) {
+  const del = db.prepare('DELETE FROM cal_links WHERE aid = ? AND day = ?'), ins = db.prepare('INSERT OR REPLACE INTO cal_links (aid, day, target) VALUES (?, ?, ?)');
+  db.transaction(() => { for (const [day, target] of Object.entries(map)) { if (!/^\d{4}-\d\d-\d\d$/.test(day)) continue; if (!target || target === 'auto') del.run(aid, day); else if (/^(m|c):\d+$|^none$/.test(target)) ins.run(aid, day, target); } })();
+  bustPairs();
+}
+const linksOf = aid => new Map(db.prepare('SELECT day, target FROM cal_links WHERE aid = ?').all(aid).map(l => [l.day, l.target]));
 
-module.exports = { FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };
+module.exports = { pairs, pairOf, setLinks, linksOf, bustPairs, ours, FIELDS, setEdits, resetField, activities, setVisible, sync, start, status, upcoming, act, datesOf, match, localISO, GAME, parseMonth, parseAct, DEFAULT_URL };

@@ -23,7 +23,7 @@ r.get('/calendario', (req, res) => {
     <td><a href="/admin/calendario/${a.aid}"><b>${a.title}</b></a>
       ${a.locked.length ? html` <span class="pill">${a.locked.length === 1 ? '1 campo fijado' : `${a.locked.length} campos fijados`}</span>` : a.edited.length ? html` <span class="pill">editado</span>` : ''}
       ${a.changed.length ? html` <span class="pill warn">ha cambiado en su web</span>` : ''}
-      <br><small class="muted">${a.dates.slice(0, 6).map(d => `${dd(d)}${d.time ? ' ' + d.time : ''}`).join(' · ')}${a.dates.length > 6 ? ` y ${a.dates.length - 6} más` : ''}</small></td>
+      <br><small class="caldts">${a.dates.slice(0, 6).map(d => { const p = J.pairOf(a.aid, d.day); return html`<span class="${p ? 'on' : ''}" title="${p ? `Se une a ${p.t.kind}: ${p.t.name}` : 'Sin torneo en esta web: sale aparte'}">${dd(d)}${d.time ? ' ' + d.time : ''}${p ? html` <b>↔ ${p.t.kind}</b>` : ''}</span>`; })}${a.dates.length > 6 ? ` y ${a.dates.length - 6} más` : ''}</small></td>
     <td class="num">${priceOf(a)}</td>
     <td class="nowrap"><a class="btn small ghost" href="/admin/calendario/${a.aid}">Editar</a>
       <form method="post" action="/admin/calendario/${a.aid}/${a.visible ? 'ocultar' : 'publicar'}" class="inline"><button class="btn small ${a.visible ? 'ghost' : ''}">${a.visible ? 'Ocultar' : 'Publicar'}</button></form></td></tr>`; };
@@ -37,10 +37,25 @@ r.get('/calendario', (req, res) => {
       <form method="post" action="/admin/calendario/leer" class="inline"><button class="btn small">Leer ahora</button></form>
       ${draft.length ? html`<form method="post" action="/admin/calendario/publicar-todo" class="inline"><button class="btn small ghost">Publicar todos los borradores (${draft.length})</button></form>` : ''}</section>
     <section class="panel"><h2>Publicados (${pub.length})</h2>${pub.length ? table(pub) : html`<p class="muted">Aún no has publicado ninguno.</p>`}
-      <p class="small muted">Si un evento publicado coincide en día y juego con un torneo de Melee o de Commander de esta web, se muestran juntos: el torneo con el precio, la información y el botón de reserva de la tienda.</p></section>
+      <p class="small muted">Las fechas marcadas con «↔ Melee» o «↔ Commander» se unen a ese torneo de esta web: al publicarlas, el torneo gana el precio, la información y el botón de reserva de la tienda y no sale repetido. Las demás salen como evento aparte. La unión se corrige en Editar.</p></section>
     <section class="panel"><h2>Borradores (${draft.length})</h2>${draft.length ? table(draft) : html`<p class="muted">No hay borradores.</p>`}</section>`)));
 });
 
+// Fechas y con qué torneo de esta web se une cada una
+function linkForm(a, dates) {
+  if (!dates.length) return html`<p class="small muted">No tiene fechas próximas (las fechas siempre vienen de su web).</p>`;
+  const links = J.linksOf(a.aid), ts = J.ours();
+  const near = d => ts.filter(t => t.day && Math.abs(new Date(t.day) - new Date(d.day)) <= 864e5).sort((x, y) => (x.day === d.day ? 0 : 1) - (y.day === d.day ? 0 : 1) || x.iso.localeCompare(y.iso));
+  const tname = t => `${t.kind}: ${t.name} (${new Date(t.iso).toLocaleString('es-ES', { timeZone: require('../config').tz, weekday: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })})`;
+  return html`<form method="post" action="/admin/calendario/${a.aid}/uniones" class="callinks"><h3>Fechas y torneo de esta web</h3>
+    <p class="small muted">Las fechas vienen siempre de su web. Si una fecha se une a un torneo de Melee o Commander de esta web, al publicar se muestran juntos.</p>
+    ${dates.map(d => { const p = J.pairOf(a.aid, d.day), cur = links.get(d.day) || 'auto', auto = !links.has(d.day);
+      return html`<label><span>${dd(d)}${d.time ? ' ' + d.time : ''}</span><select name="l_${d.day}">
+        <option value="auto" ${auto ? 'selected' : ''}>Automático${auto ? (p ? ` → ${p.t.kind}: ${p.t.name}` : ' → ninguno, sale aparte') : ''}</option>
+        ${near(d).map(t => html`<option value="${t.ref}" ${cur === t.ref ? 'selected' : ''}>${tname(t)}</option>`)}
+        <option value="none" ${cur === 'none' ? 'selected' : ''}>No unir: que salga aparte</option></select></label>`; })}
+    <button class="btn small">Guardar uniones</button></form>`;
+}
 r.get('/calendario/:aid(\\d+)', (req, res) => {
   const a = J.act(Number(req.params.aid));
   if (!a) return back(res, 'Ese evento no existe', true);
@@ -67,7 +82,7 @@ r.get('/calendario/:aid(\\d+)', (req, res) => {
       <p>${a.visible ? html`<b>Publicado</b>: sale en la web.` : html`<b>Borrador</b>: no sale en la web.`}
         <form method="post" action="/admin/calendario/${a.aid}/${a.visible ? 'ocultar' : 'publicar'}?volver=1" class="inline"><button class="btn small ${a.visible ? 'ghost' : ''}">${a.visible ? 'Ocultar' : 'Publicar'}</button></form>
         ${a.url ? html` <a class="small" href="${a.url}" target="_blank" rel="noopener">ver en su web ↗</a>` : ''} ${a.visible ? html` <a class="small" href="/evento/${a.aid}" target="_blank">ver aquí ↗</a>` : ''}</p>
-      <p class="small muted">Fechas: ${dates.length ? dates.map(d => `${dd(d)}${d.time ? ' ' + d.time : ''}`).join(' · ') : 'ninguna próxima'} (las fechas siempre vienen de su web)</p>
+      ${linkForm(a, dates)}
       <form method="post" action="/admin/calendario/${a.aid}/editar" class="aform">
         ${J.FIELDS.map(field)}
         <button class="jbtn">Guardar</button></form>
@@ -76,6 +91,12 @@ r.get('/calendario/:aid(\\d+)', (req, res) => {
 });
 r.post('/calendario/leer', (req, res) => { J.sync({ force: true }); back(res, 'Leyendo el calendario: recarga en unos segundos'); });
 r.post('/calendario/publicar-todo', (req, res) => { for (const a of J.activities().filter(a => !a.visible)) J.setVisible(a.aid, true); back(res, 'Publicados'); });
+r.post('/calendario/:aid(\\d+)/uniones', (req, res) => {
+  const aid = Number(req.params.aid), map = {};
+  for (const [k, v] of Object.entries(req.body || {})) if (k.startsWith('l_')) map[k.slice(2)] = String(v);
+  J.setLinks(aid, map);
+  back(res, 'Uniones guardadas', false, `/admin/calendario/${aid}`);
+});
 r.post('/calendario/:aid(\\d+)/editar', (req, res) => {
   const aid = Number(req.params.aid);
   try { J.setEdits(aid, req.body || {}); back(res, 'Guardado', false, `/admin/calendario/${aid}`); } catch (e) { back(res, e.message, true, `/admin/calendario/${aid}`); }
