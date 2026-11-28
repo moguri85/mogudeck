@@ -24,7 +24,7 @@ function localId(kind, ext) {
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
 // Si cambia cómo se guardan, se vuelven a guardar todos aunque en su web no haya cambios
-const SAVE_V = 3;
+const SAVE_V = 4;
 const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
@@ -97,7 +97,7 @@ const fetchTournament = async ext => ((await gql('GetCompeteTournamentForRiftbou
 const updatedAt = async ext => (await gql('GetCompeteRbRefreshPoller', { tournamentId: String(ext) })).t?.u || null;
 
 // ---------- Guardar en las tablas de torneos ----------
-const statusOf = s => (/NOT_STARTED|UPCOMING|SCHEDULED|REGISTRATION|DRAFT|PUBLISHED/i.test(s || '') ? STATUS.REGISTRATION : /IN_PROGRESS|RUNNING/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE/i.test(s || '') ? STATUS.ENDED
+const statusOf = s => (/NOT_STARTED|UPCOMING|SCHEDULED|REGISTRATION|DRAFT|PUBLISHED/i.test(s || '') ? STATUS.REGISTRATION : /IN_PROGRESS|RUNNING/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE|FINALIZED/i.test(s || '') ? STATUS.ENDED
   : /CANCEL/i.test(s || '') ? STATUS.CANCELLED : STATUS.REGISTRATION);
 const STATUS_ES = { [STATUS.REGISTRATION]: 'Inscripción abierta', [STATUS.IN_PROGRESS]: 'En juego', [STATUS.ENDED]: 'Terminado', [STATUS.CANCELLED]: 'Cancelado' };
 const FORMAT = { CONSTRUCTED: 'Constructed', SEALED: 'Sealed', DRAFT: 'Draft', LIMITED: 'Limited' };
@@ -179,7 +179,9 @@ function save(t) {
         const draws = games.filter(g => g.teamOutcomes.every(o => o.outcome === 'DRAW' || o.outcome === 'TIE')).length;
         const w1 = a ? res(a.esportsTeamId).w : 0, w2 = b ? res(b.esportsTeamId).w : 0;
         // Se da por jugada cuando su web la cierra o cuando alguien ya ha ganado las partidas necesarias (2 en un Bo3)
-        const has = done(m.status) || Math.max(w1, w2) >= need || (!!m.teamOutcomes && !/PROGRESS|PENDING|SCHEDULED|NOT_STARTED/i.test(m.status || ''));
+        // Su web deja las partidas «IN_PROGRESS» aunque estén reportadas: hay resultado si la ronda está cerrada o la partida ya tiene
+        // ganador o empate (TIE), o si alguien ha ganado las partidas necesarias
+        const has = done(m.status) || done(x.rd.status) || (Array.isArray(m.teamOutcomes) && m.teamOutcomes.some(o => o && o.outcome)) || Math.max(w1, w2) >= need;
         insM.run({ guid: `rb:${m.esportsMatchId}`, tid, rid, n: x.n, ps: x.si + 1, table: m.tableNumber ?? null, has: has ? 1 : 0, bye: b ? 0 : 1,
           t1: a ? teamId(a.esportsTeamId) : null, t2: b ? teamId(b.esportsTeamId) : null, w1, w2, d: draws,
           res: has ? `${w1}-${w2}${draws ? `-${draws}` : ''}` : null, at: x.rd.startedAt || null });
