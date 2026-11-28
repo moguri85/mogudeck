@@ -210,7 +210,7 @@ body.tv { --accent: #f47700; --bg: #111;  --ink: #f6f4ee; --muted: #8d8c95; --li
 .tv-stand { width: 100%; border-collapse: collapse; font-size: 3vh; }
 .tv-stand td, .tv-stand th { padding: .9vh 1vw; border-bottom: 1px solid var(--line); text-align: left; }
 .tv-stand th { font: 600 1.9vh var(--narrow); text-transform: uppercase; color: var(--muted); }
-.tv-stand .num { text-align: right; font-variant-numeric: tabular-nums; } .tv-stand tr:nth-child(-n+3) td:first-child { color: var(--g, var(--accent)); font-weight: 800; }
+.tv-stand .num { text-align: right; font-variant-numeric: tabular-nums; } .tv-stand tr.top td:first-child { color: var(--g, var(--accent)); font-weight: 800; }
 .tv-up { display: grid; grid-template-columns: repeat(3, 1fr); gap: 2vw; }
 .tv-up > div { background: var(--card); border-radius: 1.4vh; padding: 2.4vh; border-top: .7vh solid var(--g); display: flex; flex-direction: column; gap: 1vh; }
 .tv-up b { font: 800 3.2vh/1.15 var(--font); } .tv-up span { color: var(--muted); font-size: 2.3vh; } .tv-up img { width: 22vh; background: #fff; padding: .6vh; border-radius: .8vh; margin-top: auto; }

@@ -100,7 +100,7 @@
     } else if (s.kind === 'stand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 4 ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
         <table class="tv-stand ${s.rows.length > 12 ? 'dense' : ''}"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">Récord</th><th class="num">PGO</th><th class="num">JGE</th><th class="num">JGO</th></tr></thead><tbody>
-        ${s.rows.map(r => `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.match_record)}</td><td class="num">${r.omw != null ? (r.omw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.gw != null ? (r.gw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.ogw != null ? (r.ogw * 100).toFixed(0) + '%' : ''}</td></tr>`).join('')}
+        ${s.rows.map(r => `<tr class="${r.rank <= 3 ? 'top' : ''}"><td>${r.rank}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.match_record)}</td><td class="num">${r.omw != null ? (r.omw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.gw != null ? (r.gw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.ogw != null ? (r.ogw * 100).toFixed(0) + '%' : ''}</td></tr>`).join('')}
         </tbody></table></div>`;
     } else if (s.kind === 'pods') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Mesas · empieza quien aparece 1º</span><span>${s.t.pending} pendientes${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
@@ -109,7 +109,7 @@
     } else if (s.kind === 'cstand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 'finished' ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
         <table class="tv-stand ${s.rows.length > 12 ? 'dense' : ''}"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">V-D-E</th></tr></thead><tbody>
-        ${s.rows.map(r => `<tr><td>${r.rank}${r.champion ? ' 🏆' : ''}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.record)}</td>
+        ${s.rows.map(r => `<tr class="${r.rank <= 3 ? 'top' : ''}"><td>${r.rank}${r.champion ? ' 🏆' : ''}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.record)}</td>
           </tr>`).join('')}
         </tbody></table></div>`;
     } else if (s.kind === 'az') {
