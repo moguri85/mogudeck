@@ -42,7 +42,8 @@ r.get('/magic', (req, res) => {
     <section class="panel"><h2>Torneos (${ts.length})</h2>
       ${ts.length ? html`<div class="tablewrap"><table class="tbl"><thead><tr><th>Fecha</th><th>Torneo</th><th>Estado</th><th class="num">Jugadores</th><th></th></tr></thead><tbody>
         ${ts.map(t => html`<tr class="${t.hidden ? 'dim' : ''}"><td class="nowrap">${when(t.start_date)}</td><td><a href="/admin/torneos/${t.id}">${t.name}</a></td>
-          <td>${t.status_desc || ''}${t.status === 2 && t.current_round ? ` · ronda ${t.current_round}` : ''}</td><td class="num">${t.players}</td>
+          <td>${t.status_desc || ''}${t.status === 2 && t.current_round ? ` · ronda ${t.current_round}` : ''}
+            ${t.linked_ref ? (() => { const e = db.prepare('SELECT id, name FROM cmd_events WHERE id = ?').get(Number(t.linked_ref.slice(2))); return e ? html`<br><small>↔ unido al Commander <a href="/admin/commander/${e.id}">${e.name}</a></small>` : ''; })() : t.hidden ? html`<br><small class="muted">no sale en la web (no es un torneo)</small>` : ''}</td><td class="num">${t.players}</td>
           <td class="nowrap"><a class="small" href="/t/${t.id}" target="_blank">ver ↗</a></td></tr>`)}
       </tbody></table></div>` : html`<p class="muted">Todavía no hay ninguno.</p>`}</section>`)));
 });

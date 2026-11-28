@@ -134,7 +134,7 @@ function adminPage(req, title, body, { extraHead = '', flash = null } = {}) {
 </header>
 <div class="shell">
 <aside class="sidenav">${NAV.filter(n => (n[2] === 'staff' || user.role === 'admin') && (!n[3] || s['feature_' + n[3]] === '1')).map(([href, label, , , also]) =>
-    html`<a href="${href}" class="${active(href, also) ? 'on' : ''}">${label}${href === '/admin/comunidad' ? (() => { const n = require('../db').feature('moments') ? require('../community').momentsPending() : 0; return n ? html` <span class="navbadge" title="Fotos por revisar">${n}</span>` : ''; })() : ''}${href === '/admin/jugadores' ? (() => { const n = require('../accounts').pendingCount(); return n ? html` <span class="navbadge" title="Solicitudes pendientes">${n}</span>` : ''; })() : ''}</a>`)}</aside>
+    html`<a href="${href}" class="${active(href, also) ? 'on' : ''}">${label}${href === '/admin' ? (() => { const n = require('../syncwarn').count(); return n ? html` <span class="navbadge" title="Avisos de sincronización">${n}</span>` : ''; })() : ''}${href === '/admin/comunidad' ? (() => { const n = require('../db').feature('moments') ? require('../community').momentsPending() : 0; return n ? html` <span class="navbadge" title="Fotos por revisar">${n}</span>` : ''; })() : ''}${href === '/admin/jugadores' ? (() => { const n = require('../accounts').pendingCount(); return n ? html` <span class="navbadge" title="Solicitudes pendientes">${n}</span>` : ''; })() : ''}</a>`)}</aside>
 <main class="content">
 ${f ? html`<div class="flash ${req.query.err ? 'err' : ''}">${f}</div>` : ''}
 <h1>${title}</h1>

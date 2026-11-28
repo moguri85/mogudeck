@@ -73,9 +73,11 @@ r.get('/', (req, res) => {
   const templates = db.prepare('SELECT * FROM templates ORDER BY sort, name').all();
   const st = sync.state();
   const lastLog = db.prepare("SELECT * FROM sync_log WHERE level = 'error' ORDER BY id DESC LIMIT 1").get();
+  const warns = require('../syncwarn').list();
   send(res, adminPage(req, 'Inicio', html`
+    ${warns.length ? html`<section class="panel syncwarn"><h2>Avisos de sincronización <small class="muted">${warns.length}</small></h2><ul>
+      ${warns.map(w => html`<li class="sw-${w.level}">${w.href ? html`<a href="${w.href}">${w.text}</a>` : w.text}</li>`)}</ul></section>` : ''}
     ${!st.configured ? html`<div class="flash err">Faltan las credenciales de Melee (MELEE_CLIENT_ID / MELEE_CLIENT_SECRET) en el .env.</div>` : ''}
-    ${st.lastError ? html`<div class="flash err">Último error de sincronización: ${st.lastError}</div>` : ''}
     ${cmdLive.length ? html`<section class="panel live"><h2>Commander en juego</h2>${cmdLive.map(e => {
       const cur = C.currentRound(e.id);
       const pend = cur ? C.podsOfRound(cur.id).filter(p => !p.reported).length : 0;

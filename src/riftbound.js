@@ -9,6 +9,7 @@ addColumn('tournaments', 'source', "TEXT DEFAULT 'melee'");
 addColumn('tournaments', 'ext_id', 'TEXT');
 addColumn('tournaments', 'ext_url', 'TEXT');
 addColumn('tournaments', 'ext_updated', 'TEXT');
+addColumn('tournaments', 'linked_ref', 'TEXT'); // el mismo evento llevado aquí (p. ej. 'c:4', un Commander): no sale repetido
 db.exec(`CREATE TABLE IF NOT EXISTS ext_ids (kind TEXT NOT NULL, ext TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, UNIQUE (kind, ext));
 INSERT OR IGNORE INTO sqlite_sequence (name, seq) SELECT 'ext_ids', 900000000 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'ext_ids');`);
 

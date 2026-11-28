@@ -140,9 +140,12 @@ function save({ ev, states }) {
       db.prepare("UPDATE tournaments SET ext_updated = 'h1' WHERE id = ?").run(tid);
       const fmt = `${ev.eventFormat && ev.eventFormat.name || ''} ${ev.title || ''}`;
       const day = !isNaN(startMs) ? new Date(startMs).toLocaleDateString('sv-SE', { timeZone: require('./config').tz }) : null;
-      const cmdSameDay = day && /commander/i.test(fmt) && db.prepare('SELECT start_date FROM cmd_events WHERE start_date IS NOT NULL').all()
-        .some(e => new Date(e.start_date).toLocaleDateString('sv-SE', { timeZone: require('./config').tz }) === day);
-      if (/dungeons|d&d|\brol\b/i.test(fmt) || (/\bother\b/i.test(ev.eventFormat && ev.eventFormat.name || '') && /play|libre|abierto/i.test(ev.title || '')) || cmdSameDay)
+      // Commander de EventLink el mismo día que un Commander de aquí: es el mismo evento, se unen (sale el de aquí)
+      const cmd = day && /commander/i.test(fmt) ? db.prepare('SELECT id, start_date FROM cmd_events WHERE start_date IS NOT NULL').all()
+        .filter(e => new Date(e.start_date).toLocaleDateString('sv-SE', { timeZone: require('./config').tz }) === day)
+        .sort((x, y) => Math.abs(Date.parse(x.start_date) - startMs) - Math.abs(Date.parse(y.start_date) - startMs))[0] : null;
+      if (cmd) db.prepare('UPDATE tournaments SET hidden = 1, linked_ref = ? WHERE id = ?').run(`c:${cmd.id}`, tid);
+      else if (/dungeons|d&d|\brol\b/i.test(fmt) || (/\bother\b/i.test(ev.eventFormat && ev.eventFormat.name || '') && /play|libre|abierto/i.test(ev.title || '')))
         db.prepare('UPDATE tournaments SET hidden = 1 WHERE id = ?').run(tid);
     }
     if (!prev) db.prepare('UPDATE tournaments SET notified_new = 1, notified_round = CASE WHEN status = 4 THEN 999 ELSE 0 END, notified_final = CASE WHEN status = 4 THEN 1 ELSE 0 END WHERE id = ?').run(tid);

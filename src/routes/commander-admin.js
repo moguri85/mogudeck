@@ -327,7 +327,8 @@ r.get('/:id', (req, res) => {
   send(res, adminPage(req, ev.name, html`
     ${savedPod ? html`<form method="post" action="${base(ev)}/mesa/${savedPod.id}" class="undo-toast" role="status"><span>Resultado guardado · mesa ${savedPod.table_no}</span><button name="result" value="clear">Deshacer</button><a href="${base(ev)}" aria-label="Cerrar">×</a></form>` : ''}
     <p><span class="badge" style="--g:#7b5ea7">Commander</span> <span class="status ${ev.status === 'running' ? 'live' : ''}">${statusLabel}</span>
-      · ${fmtDate(ev.start_date)} ${ev.price_cents != null ? html`· ${money(ev.price_cents)}` : ''}</p>
+      · ${fmtDate(ev.start_date)} ${ev.price_cents != null ? html`· ${money(ev.price_cents)}` : ''}
+      ${(() => { try { const l = db.prepare("SELECT name, ext_url FROM tournaments WHERE source = 'eventlink' AND linked_ref = ?").get(`c:${ev.id}`); return l ? html` · ↔ unido a EventLink: <a href="${l.ext_url}" target="_blank" rel="noopener">${l.name} ↗</a>` : ''; } catch (e) { return ''; } })()}</p>
     <div class="stats">
       <div><b>${active.length}</b><span>activos (${ps.length} inscritos)</span></div>
       <div><b>${swissDone}/${limit}</b><span>rondas · máximo por suizo ${maxR}</span></div>
