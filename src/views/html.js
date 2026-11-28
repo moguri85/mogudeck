@@ -110,6 +110,7 @@ const NAV = [
   ['/admin/meta', 'Meta', 'staff'],
   ['/admin/comunidad', 'Comunidad', 'staff'],
   ['/admin/calendario', 'Calendario', 'staff', 'calendar'],
+  ['/admin/riftbound', 'Riftbound', 'staff', 'riftbound'],
   ['/admin/caja', 'Caja', 'staff', 'cash'],
   ['/admin/guia', 'Guía Melee', 'staff'],
   ['/admin/ajustes', 'Ajustes', 'admin'],

@@ -280,7 +280,7 @@ r.get('/t/:id', (req, res) => {
   const t = publicTournament(Number(req.params.id));
   if (!t) return res.status(404).send(String(publicPage('No encontrado', html`<p>Torneo no encontrado.</p>`)));
   const snap = { ...data.liveSnapshot(t.id), profiles: feature('profiles'), tg: require('../tgbot').enabled() };
-  const u = melee.urls(t.id);
+  const u = melee.urlsFor(t);
   const price = t.price_cents;
   res.send(String(publicPage(t.name, html`
     <div class="thead ${snap.live ? 'is-live' : ''} ${media(realImage(t.brand_image), t.game) ? '' : 'nomedia'}" style="--g:${melee.gameInfo(t.game).color}">
@@ -292,14 +292,14 @@ r.get('/t/:id', (req, res) => {
         <p class="tdate">${fmtDate(t.start_date, { weekday: 'long', month: 'long' })}</p>
         <p class="tmeta">${snap.players.total ? html`${snap.players.total} jugadores` : ''}${t.rounds_total ? html` · ${t.rounds_total} rondas` : ''}</p>
         <div class="thead-cta">${price != null && t.status === 1 ? html`<span class="tcard-price big">${money(price)}</span>` : ''}
-          ${t.status === 1 ? html`<a class="jbtn big" href="${u.view}" rel="noopener">Inscribirme en Melee</a>` : html`<a class="jbtn-outline" href="${u.view}" rel="noopener">Ver en Melee →</a>`}</div>
+          ${t.status === 1 ? html`<a class="jbtn big" href="${u.view}" rel="noopener">Inscribirme en ${u.name}</a>` : html`<a class="jbtn-outline" href="${u.view}" rel="noopener">Ver en ${u.name} →</a>`}</div>
       </div>
     </div>
     ${t.info && !snap.live ? html`<section class="infobox"><h2>Información</h2>${infoHtml(`m:${t.id}`, t.info)}</section>` : ''}
     ${!snap.live ? calBox(`m:${t.id}`, !!t.info) : ''}
     <div id="live" data-id="${t.id}"></div>
     ${t.info && snap.live ? html`<section class="infobox after"><h2>Información</h2>${infoHtml(`m:${t.id}`, t.info)}</section>` : ''}
-    ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en Melee</a></p>` : ''}
+    ${snap.live ? html`<p class="melee-out"><a class="jbtn-outline" href="${u.view}" rel="noopener">Ver este torneo en ${u.name}</a></p>` : ''}
     <script>window.__SNAP = ${json(snap)};</script>
     <script src="/static/ui.js"></script><script src="/static/tournament.js"></script>
   `)));
@@ -336,7 +336,7 @@ r.get('/mesa/:n', (req, res) => {
       <div class="mesa-card">
         <div class="muted">${t.name} · Ronda ${round}</div>
         <div class="vs"><span>${m.p1}</span><em>vs</em><span>${m.p2 || 'BYE'}</span></div>
-        ${m.hasResult ? html`<div class="ok">Resultado: ${m.result}</div>` : html`<div class="muted">Pendiente de resultado · repórtalo en la app de Melee</div>`}
+        ${m.hasResult ? html`<div class="ok">Resultado: ${m.result}</div>` : html`<div class="muted">Pendiente de resultado · repórtalo en ${melee.urlsFor(t).app}</div>`}
         <a class="btn ghost" href="/t/${t.id}">Ver emparejamientos y clasificación</a>
       </div>`) : html`<p class="center muted">Ahora mismo no hay ninguna partida en esta mesa.</p>
       ${live.length ? html`<p class="center">${live.map(t => html`<a class="btn ghost" href="/t/${t.id}">${t.name}</a> `)}</p>` : ''}`}

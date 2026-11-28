@@ -77,4 +77,5 @@ app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
   require('./cardnames').start();
   require('./tgbot').start();
   require('./jupcal').start();
+  require('./riftbound').start();
 });

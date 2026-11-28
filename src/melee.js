@@ -123,6 +123,11 @@ async function debugStartDate(id) {
   return out;
 }
 
+// Enlaces del torneo en su plataforma (Melee, o la de Riot para Riftbound)
+function urlsFor(t) {
+  if (t && t.source === 'riftbound') return { name: 'playriftbound.com', app: 'la web de Riftbound', view: t.ext_url, edit: 'https://rgn.playriftbound.com/', control: 'https://rgn.playriftbound.com/' };
+  return { name: 'Melee', app: 'la app de Melee', ...urls(t.id) };
+}
 function urls(id) {
   const b = config.meleeBase;
   return {
@@ -132,4 +137,4 @@ function urls(id) {
   };
 }
 
-module.exports = { api, scrapeStartDate, apiStartDate, debugStartDate, configured, gameInfo, GAMES, STATUS, urls };
+module.exports = { urlsFor, api, scrapeStartDate, apiStartDate, debugStartDate, configured, gameInfo, GAMES, STATUS, urls };

@@ -165,7 +165,7 @@ async function syncList() {
 }
 
 async function syncLive() {
-  for (const t of data.liveTournaments()) {
+  for (const t of data.liveTournaments().filter(t => (t.source || 'melee') === 'melee')) {
     try {
       await syncDetails(t.id, { full: false });
       await runNotifications(t.id);
@@ -178,7 +178,7 @@ async function syncLive() {
 // Torneos ya acabados: se vuelven a leer de vez en cuando por si en Melee corrigen un resultado o la clasificación
 async function syncRecheck() {
   const since = new Date(Date.now() - config.syncRecheckDays * 864e5).toISOString().slice(0, 10);
-  const ts = db.prepare(`SELECT id, name FROM tournaments WHERE status = ? AND hidden = 0
+  const ts = db.prepare(`SELECT id, name FROM tournaments WHERE status = ? AND hidden = 0 AND COALESCE(source, 'melee') = 'melee'
     AND substr(COALESCE(start_date, last_pair, first_seen), 1, 10) >= ? ORDER BY COALESCE(start_date, last_pair) DESC`).all(STATUS.ENDED, since);
   let n = 0;
   for (const t of ts) {
@@ -209,7 +209,7 @@ async function personalRound(tid) {
   const round = data.currentRound(tid);
   if (!round || round <= (t.tg_round || 0)) return;
   db.prepare('UPDATE tournaments SET tg_round = ? WHERE id = ?').run(round, tid);
-  const link = publicUrl(`/t/${t.id}`) || melee.urls(t.id).view;
+  const link = publicUrl(`/t/${t.id}`) || melee.urlsFor(t).view;
   const msgs = new Map();
   const key = u => (u ? require('./identity').resolve('u:' + u.toLowerCase()) : null);
   for (const p of data.pairings(tid, round)) {
@@ -234,11 +234,11 @@ async function runNotifications(tid) {
   const t = data.tournament(tid);
   if (!t || t.hidden) return;
   const g = melee.gameInfo(t.game);
-  const link = publicUrl(`/t/${t.id}`) || melee.urls(t.id).view;
+  const link = publicUrl(`/t/${t.id}`) || melee.urlsFor(t).view;
 
   if (!t.notified_new && t.status === STATUS.REGISTRATION && setting('notify_new') === '1') {
     db.prepare('UPDATE tournaments SET notified_new = 1 WHERE id = ?').run(tid);
-    await notify.send(`📅 **Nuevo torneo de ${g.short}: ${t.name}**\n${fmtDate(t.start_date)}\nInscripción: ${melee.urls(t.id).view}`);
+    await notify.send(`📅 **Nuevo torneo de ${g.short}: ${t.name}**\n${fmtDate(t.start_date)}\nInscripción: ${melee.urlsFor(t).view}`);
   }
 
   const round = data.currentRound(tid);
@@ -318,9 +318,11 @@ function start() {
 }
 
 async function forceTournament(tid) {
+  const t = data.tournament(tid);
+  if (t && t.source === 'riftbound') { await require('./riftbound').syncOne(t.ext_id, { force: true }); return; }
   await refreshStartDate(tid);
   await syncDetails(tid);
   await runNotifications(tid);
 }
 
-module.exports = { start, tick, syncList, forceTournament, state, seedChecklist, DEFAULT_CHECKLIST, fmtDate, refreshStartDate };
+module.exports = { runNotifications, start, tick, syncList, forceTournament, state, seedChecklist, DEFAULT_CHECKLIST, fmtDate, refreshStartDate };
