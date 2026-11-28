@@ -17,8 +17,8 @@
         const pp = chunk(t.pods, 6);
         pp.forEach((p, i) => out.push({ kind: 'pods', t, rows: p, page: i + 1, pages: pp.length }));
         if (t.round > 1 || t.status === 'finished') {
-          const sp = chunk(t.standings, 12);
-          sp.slice(0, 3).forEach((p, i) => out.push({ kind: 'cstand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 3) }));
+          const sp = chunk(t.standings, 16);
+          sp.slice(0, 4).forEach((p, i) => out.push({ kind: 'cstand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 4) }));
         }
         if (!t.pods.length) out.push({ kind: 'wait', t: { ...t, players: { total: t.players } } });
         // Mesas en directo (contador de vidas): la más igualada y las que están a punto de acabar
@@ -29,8 +29,8 @@
       const pages = chunk(t.pairings, 16);
       pages.forEach((p, i) => out.push({ kind: 'pairs', t, rows: p, page: i + 1, pages: pages.length }));
       if (t.standings.length && t.round > 1 || (t.standings.length && t.status === 4)) {
-        const sp = chunk(t.standings, 12);
-        sp.slice(0, 3).forEach((p, i) => out.push({ kind: 'stand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 3) }));
+        const sp = chunk(t.standings, 16);
+        sp.slice(0, 4).forEach((p, i) => out.push({ kind: 'stand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 4) }));
       }
       if (!t.pairings.length && !t.standings.length) out.push({ kind: 'wait', t });
     }
@@ -99,7 +99,7 @@
           <div class="st">${p.hasResult && !p.bye ? `${p.w1 ?? 0}-${p.w2 ?? 0}` : p.bye ? '' : 'jugando'}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'stand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 4 ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
-        <table class="tv-stand"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">Récord</th><th class="num">PGO</th><th class="num">JGE</th><th class="num">JGO</th></tr></thead><tbody>
+        <table class="tv-stand ${s.rows.length > 12 ? 'dense' : ''}"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">Récord</th><th class="num">PGO</th><th class="num">JGE</th><th class="num">JGO</th></tr></thead><tbody>
         ${s.rows.map(r => `<tr><td>${r.rank}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.match_record)}</td><td class="num">${r.omw != null ? (r.omw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.gw != null ? (r.gw * 100).toFixed(0) + '%' : ''}</td><td class="num">${r.ogw != null ? (r.ogw * 100).toFixed(0) + '%' : ''}</td></tr>`).join('')}
         </tbody></table></div>`;
     } else if (s.kind === 'pods') {
@@ -108,7 +108,7 @@
           ${pod.players.map(p => { const lv = !pod.reported && pod.life && pod.life[p.id]; return `<span class="${pod.winner === p.id ? 'win' : ''} ${lv && lv.out ? 'ko' : ''}"><i>${p.seat}º</i>${esc(p.name)}${pod.winner === p.id ? ' 🏆' : ''}${lv ? `<em class="hp">${lv.out ? '✕' : lv.life}</em>` : ''}</span>`; }).join('')}${pod.reported ? '' : tags(pod)}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'cstand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 'finished' ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
-        <table class="tv-stand"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">V-D-E</th></tr></thead><tbody>
+        <table class="tv-stand ${s.rows.length > 12 ? 'dense' : ''}"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">V-D-E</th></tr></thead><tbody>
         ${s.rows.map(r => `<tr><td>${r.rank}${r.champion ? ' 🏆' : ''}</td><td>${esc(r.name)}</td><td class="num"><b>${r.points}</b></td><td class="num">${esc(r.record)}</td>
           </tr>`).join('')}
         </tbody></table></div>`;
