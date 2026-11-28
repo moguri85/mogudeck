@@ -10,6 +10,8 @@ const u = 'https://events.playriftbound.com/api/gql?' + new URLSearchParams({ op
 const j = JSON.parse(await get(u, { Accept: 'application/json', 'apollo-require-preflight': 'true', 'apollographql-client-name': 'Esports Web', 'apollographql-client-version': '1.0.0' }));
 const t = j.data.competeTournaments[0];
 console.log('status', t.status);
+for (const st of t.stages) { console.log('STAGE', st.esportsStageId, st.name, st.status, 'sections', st.sections.length);
+  for (const sec of st.sections) console.log('  SECTION', sec.esportsSectionId, sec.type, 'rounds', (sec.rounds || []).length, 'columns', JSON.stringify(sec.columns || null).slice(0, 1500), 'seeding', JSON.stringify(sec.seeding || null).slice(0, 300)); }
 for (const st of t.stages) for (const sec of st.sections) for (const rd of sec.rounds) {
   console.log(`== ronda ${rd.roundNumber} ${rd.status} matches ${rd.matches.length} byes ${JSON.stringify(rd.byeTeamIds)} standings ${(rd.endOfRoundStandings || []).length}`);
   for (const m of rd.matches) {
