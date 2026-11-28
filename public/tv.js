@@ -346,7 +346,15 @@
   setInterval(bigClock, 1000);
   load();
   setInterval(load, 8000);
-  setInterval(() => { idx = (idx + 1) % Math.max(slides.length, 1); render(); }, seconds * 1000);
+  // Pasa sola cada «seconds»; con las flechas izquierda y derecha (o el mando de la tele) se cambia a mano y vuelve a contar desde ahí
+  let timer = null;
+  const step = d => { const n = Math.max(slides.length, 1); idx = ((idx + d) % n + n) % n; render(); };
+  const restart = () => { clearInterval(timer); timer = setInterval(() => step(1), seconds * 1000); };
+  restart();
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === 'MediaTrackNext') { e.preventDefault(); step(1); restart(); }
+    else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'MediaTrackPrevious') { e.preventDefault(); step(-1); restart(); }
+  });
   setInterval(() => {
     const c = document.getElementById('clock');
     const s = slides[idx % slides.length];
