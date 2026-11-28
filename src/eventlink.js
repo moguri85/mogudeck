@@ -83,7 +83,7 @@ const Q_STATE = `query st($eventId: ID!, $round: Int!) { gameStateV2AtRound(even
 } }`;
 const Q_LIVE = `query live($id: ID!) { eventsInProgress(organizationId: $id) { id title scheduledStartTime status round minimumRounds playoffRounds } }`;
 
-const statusOf = s => (/RUNNING|PROGRESS|STARTED|ACTIVE|PLAYING/i.test(s || '') ? STATUS.IN_PROGRESS : /ENDED|COMPLET|FINISH|CLOSED/i.test(s || '') ? STATUS.ENDED
+const statusOf = s => (/NOT_STARTED|SCHEDULED|UPCOMING|REGISTRATION/i.test(s || '') ? STATUS.REGISTRATION : /RUNNING|IN_PROGRESS|PLAYING/i.test(s || '') ? STATUS.IN_PROGRESS : /ENDED|COMPLET|FINISH|CLOSED/i.test(s || '') ? STATUS.ENDED
   : /CANCEL/i.test(s || '') ? STATUS.CANCELLED : STATUS.REGISTRATION);
 const STATUS_ES = { [STATUS.REGISTRATION]: 'Inscripción abierta', [STATUS.IN_PROGRESS]: 'En juego', [STATUS.ENDED]: 'Terminado', [STATUS.CANCELLED]: 'Cancelado' };
 const nameOf = p => (p ? (p.displayName && p.displayName !== '[REDACTED]' ? p.displayName : [p.firstName, p.lastName].filter(Boolean).join(' ')) || 'Jugador' : 'Jugador');

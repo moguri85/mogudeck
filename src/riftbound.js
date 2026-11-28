@@ -23,7 +23,7 @@ function localId(kind, ext) {
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
 // Si cambia cómo se guardan, se vuelven a guardar todos aunque en su web no haya cambios
-const SAVE_V = 2;
+const SAVE_V = 3;
 const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
@@ -96,7 +96,7 @@ const fetchTournament = async ext => ((await gql('GetCompeteTournamentForRiftbou
 const updatedAt = async ext => (await gql('GetCompeteRbRefreshPoller', { tournamentId: String(ext) })).t?.u || null;
 
 // ---------- Guardar en las tablas de torneos ----------
-const statusOf = s => (/IN_PROGRESS|STARTED|RUNNING/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE/i.test(s || '') ? STATUS.ENDED
+const statusOf = s => (/NOT_STARTED|UPCOMING|SCHEDULED|REGISTRATION|DRAFT|PUBLISHED/i.test(s || '') ? STATUS.REGISTRATION : /IN_PROGRESS|RUNNING/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE/i.test(s || '') ? STATUS.ENDED
   : /CANCEL/i.test(s || '') ? STATUS.CANCELLED : STATUS.REGISTRATION);
 const STATUS_ES = { [STATUS.REGISTRATION]: 'Inscripción abierta', [STATUS.IN_PROGRESS]: 'En juego', [STATUS.ENDED]: 'Terminado', [STATUS.CANCELLED]: 'Cancelado' };
 const FORMAT = { CONSTRUCTED: 'Constructed', SEALED: 'Sealed', DRAFT: 'Draft', LIMITED: 'Limited' };
