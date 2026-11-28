@@ -22,6 +22,8 @@ function localId(kind, ext) {
 
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
+// Si cambia cómo se guardan, se vuelven a guardar todos aunque en su web no haya cambios
+const SAVE_V = 2;
 const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
@@ -130,7 +132,7 @@ function save(t) {
       .run({ id: tid, guid: `rb:${t.id}`, name: t.name, status, status_desc: STATUS_ES[status], type_desc: t.tournamentProgram?.programName || cfg.tournamentType || null,
         formats: JSON.stringify(cfg.format ? [FORMAT[cfg.format] || cfg.format] : []), org_name: t.organizer?.name || null, start: t.startsAt || null,
         last_pair: live ? live.rd.startedAt : rounds.length ? rounds[rounds.length - 1].rd.startedAt || null : null, timer_state: timerEnd ? 1 : 0, timer_end: timerEnd,
-        total: total || null, cur: rounds.length, ext: String(t.id), url: PUBLIC + t.id, upd: t.updatedAt || null,
+        total: total || null, cur: rounds.length, ext: String(t.id), url: PUBLIC + t.id, upd: t.updatedAt ? `${t.updatedAt}#${SAVE_V}` : null,
         price: t.entryFee?.minorUnits != null ? t.entryFee.minorUnits : (t.pricing === 'FREE' ? 0 : null), final: status === STATUS.ENDED ? 1 : 0 });
     if (!prev) db.prepare('UPDATE tournaments SET notified_new = CASE WHEN status IN (3,4) THEN 1 ELSE 0 END WHERE id = ?').run(tid);
 
@@ -240,7 +242,7 @@ async function syncOne(ext, { force = false } = {}) {
   const row = db.prepare("SELECT id, ext_updated FROM tournaments WHERE source = 'riftbound' AND ext_id = ?").get(String(ext));
   if (row && !force) {
     const u = await updatedAt(ext);
-    if (u && u === row.ext_updated) return row.id; // sin cambios desde la última vez
+    if (u && `${u}#${SAVE_V}` === row.ext_updated) return row.id; // sin cambios desde la última vez
   }
   const t = await fetchTournament(ext);
   if (!t) throw new Error(`No existe el torneo ${ext} en playriftbound.com`);

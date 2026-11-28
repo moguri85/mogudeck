@@ -53,7 +53,10 @@ app.use(accounts.middleware);
 app.use((req, res, next) => require('./reqctx').run({ account: req.account }, next));
 app.use(auth.sameOrigin);
 
-app.get('/healthz', (req, res) => res.json({ ok: true, sync: sync.state() }));
+app.get('/healthz', (req, res) => {
+  const ext = s => { try { const x = require(s).state(); return { running: x.running, lastList: x.lastList, lastError: x.lastError }; } catch (e) { return null; } };
+  res.json({ ok: true, sync: sync.state(), riftbound: ext('./riftbound'), eventlink: ext('./eventlink') });
+});
 app.use('/admin', require('./routes/admin'));
 app.use('/', require('./routes/cuenta'));
 app.use('/', require('./routes/comunidad').router);
