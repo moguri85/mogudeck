@@ -102,6 +102,7 @@ const NAV = [
   ['/admin', 'Inicio', 'staff'],
   ['/admin/torneos', 'Torneos', 'staff'],
   ['/admin/commander', 'Commander', 'staff'],
+  ['/admin/auditoria', 'Auditoría', 'staff'],
   ['/admin/plantillas', 'Plantillas', 'staff'],
   ['/admin/qr', 'QR y mesas', 'staff'],
   ['/admin/premios', 'Premios y rondas', 'staff', 'prizes'],

@@ -1885,3 +1885,7 @@ h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display)
 /* Contador: deshacer / rehacer */
 .lf-bar button.ur { min-width: 40px; padding: 6px 10px; font: 700 19px/1 var(--font); }
 .lf-bar button.ur:disabled { opacity: .35; cursor: default; }
+/* Auditoría del contador */
+.audfil { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); align-items: end; }
+.tbl.aud td { vertical-align: top; font-size: 14px; } .tbl.aud tr.err td { background: #fdecea; }
+.audch { margin: 0; padding-left: 16px; } .audch li { margin: 2px 0; } .audch s { color: var(--muted); }

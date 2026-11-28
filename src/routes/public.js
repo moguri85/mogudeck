@@ -865,6 +865,10 @@ r.post('/commander/:id/vidas/:pod', async (req, res) => {
   if (lifeSlow(req)) return res.status(429).json({ error: 'Demasiados toques seguidos: espera un momento' });
   const ev = C.getEvent(Number(req.params.id));
   if (!ev || !ev.public) return res.status(404).json({ error: 'no encontrado' });
+  // Auditoría: estado antes de la acción y quién la hace
+  const AU = require('../lifeaudit'), podN = Number(req.params.pod), opA = String(req.body.op || ''), byA = Number(req.body.by) || null;
+  let view0 = null; try { view0 = L.view(ev.id, podN); } catch (e) { view0 = null; }
+  const byName = view0 && byA ? ((view0.state.players || []).find(p => p.id === byA) || {}).name || null : null;
   try {
     const by = Number(req.body.by);
     const tok = claimFor(req, res, ev.id, by);
@@ -884,9 +888,13 @@ r.post('/commander/:id/vidas/:pod', async (req, res) => {
       return res.json({ ...out, tok });
     }
     const out = op === 'finish' ? L.finish(ev.id, Number(req.params.pod), by, req.body.winner) : L.apply(ev.id, Number(req.params.pod), by, { ...req.body, op });
+    AU.record({ req, ev, podId: podN, view0, out, byId: by, byName, op, body: req.body });
     if (['kill', 'revive', 'finish', 'reset'].includes(op)) { C.activity(ev.id, by, 'contador', `mesa ${out.table}: ${op}${req.body.pid ? ' ' + req.body.pid : ''}`, req); require('../rivals').invalidate(); }
     res.json({ ...out, tok });
-  } catch (e) { res.status(e instanceof C.ClaimError ? 403 : e instanceof L.LifeError ? 400 : 500).json({ error: e.message }); }
+  } catch (e) {
+    AU.record({ req, ev, podId: podN, view0, out: null, byId: byA, byName, op: opA, body: req.body, error: e.message });
+    res.status(e instanceof C.ClaimError ? 403 : e instanceof L.LifeError ? 400 : 500).json({ error: e.message });
+  }
 });
 
 r.post('/commander/:id/mazo', (req, res) => {

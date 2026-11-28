@@ -63,6 +63,7 @@ r.use('/', require('./comunidad-admin'));
 r.use('/', require('./calendario-admin'));
 r.use('/', require('./riftbound-admin'));
 r.use('/', require('./magic-admin'));
+r.use('/', require('./auditoria-admin'));
 
 // ---------------- Inicio ----------------
 r.get('/', (req, res) => {
