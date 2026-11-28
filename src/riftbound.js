@@ -24,7 +24,7 @@ function localId(kind, ext) {
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
 // Si cambia cómo se guardan, se vuelven a guardar todos aunque en su web no haya cambios
-const SAVE_V = 4;
+const SAVE_V = 5;
 const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
@@ -174,6 +174,7 @@ function save(t) {
       const rid = localId('rbround', `${t.id}:${x.sec.esportsSectionId}:${x.rd.roundNumber}`);
       for (const m of x.rd.matches || []) {
         const [a, b] = m.teams || [];
+        if (!a || !b) continue; // eliminatoria sin rivales todavía (o esperando al ganador de otra mesa); los byes vienen en byeTeamIds
         const games = (m.games || []).filter(g => g.teamOutcomes);
         const res = ext => ({ w: games.filter(g => g.teamOutcomes.some(o => o.esportsTeamId === ext && o.outcome === 'WIN')).length });
         const draws = games.filter(g => g.teamOutcomes.every(o => o.outcome === 'DRAW' || o.outcome === 'TIE')).length;
