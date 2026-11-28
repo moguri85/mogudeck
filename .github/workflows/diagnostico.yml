@@ -1,0 +1,23 @@
+name: Diagnóstico de fuentes externas
+
+# Se lanza a mano. Lee webs públicas (playriftbound.com, EventLink) desde GitHub, sin tocar el servidor ni usar contraseñas
+on:
+  workflow_dispatch:
+    inputs:
+      torneo:
+        description: 'ID del torneo de playriftbound.com'
+        required: false
+        default: '117557998796655771'
+
+jobs:
+  descubre:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - name: Descubrir
+        run: node dev/descubre.mjs "${{ github.event.inputs.torneo }}"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: disc, path: /tmp/disc, retention-days: 7 }
