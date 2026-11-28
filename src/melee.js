@@ -125,6 +125,7 @@ async function debugStartDate(id) {
 
 // Enlaces del torneo en su plataforma (Melee, o la de Riot para Riftbound)
 function urlsFor(t) {
+  if (t && t.source === 'eventlink') return { name: 'Companion', app: 'la app Companion', view: 'https://magic.wizards.com/es/companion', edit: t.ext_url, control: t.ext_url };
   if (t && t.source === 'riftbound') return { name: 'playriftbound.com', app: 'la web de Riftbound', view: t.ext_url, edit: 'https://rgn.playriftbound.com/', control: 'https://rgn.playriftbound.com/' };
   return { name: 'Melee', app: 'la app de Melee', ...urls(t.id) };
 }

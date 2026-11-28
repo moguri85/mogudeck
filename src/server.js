@@ -78,4 +78,5 @@ app.listen(config.port, process.env.HOST || '0.0.0.0', () => {
   require('./tgbot').start();
   require('./jupcal').start();
   require('./riftbound').start();
+  require('./eventlink').start();
 });

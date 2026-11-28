@@ -62,6 +62,7 @@ r.use('/commander', require('./commander-admin'));
 r.use('/', require('./comunidad-admin'));
 r.use('/', require('./calendario-admin'));
 r.use('/', require('./riftbound-admin'));
+r.use('/', require('./magic-admin'));
 
 // ---------------- Inicio ----------------
 r.get('/', (req, res) => {
@@ -172,7 +173,7 @@ r.get('/torneos/:id', (req, res) => {
     <p>${gameBadge(t.game)} ${statusBadge(t, snap.live)} · ${fmtDate(t.start_date)} · ${t.type_desc || ''}
       ${t.formats ? html` · ${JSON.parse(t.formats).join(', ')}` : ''}</p>
     <div class="actions">
-      ${t.source === 'riftbound' ? html`<a class="btn" href="${u.control}" target="_blank" rel="noopener">Gestionar en RGN ↗</a>
+      ${t.source === 'eventlink' ? html`<a class="btn" href="${u.control}" target="_blank" rel="noopener">Abrir en EventLink ↗</a>` : t.source === 'riftbound' ? html`<a class="btn" href="${u.control}" target="_blank" rel="noopener">Gestionar en RGN ↗</a>
       <a class="btn ghost" href="${u.view}" target="_blank" rel="noopener">Página en playriftbound.com ↗</a>` : html`<a class="btn" href="${u.control}" target="_blank" rel="noopener">Controlador Melee ↗</a>
       <a class="btn ghost" href="${u.edit}" target="_blank" rel="noopener">Editar en Melee ↗</a>
       <a class="btn ghost" href="${u.view}" target="_blank" rel="noopener">Página Melee ↗</a>`}
@@ -1117,6 +1118,7 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
     ${cb('feature_loans', 'Mazos de préstamo: los jugadores prestan y piden mazos')}
     ${cb('feature_moments', 'Momentos: fotos de los jugadores en la TV (con revisión del staff antes de salir)')}
     ${cb('feature_riftbound', 'Riftbound: trae los torneos de la tienda desde playriftbound.com (emparejamientos, resultados y clasificación)')}
+    ${cb('feature_eventlink', 'Magic (EventLink): trae los torneos de la tienda con la cuenta conectada en Admin › Magic')}
     ${cb('feature_calendar', 'Calendario de la web de la tienda: trae los eventos de «Enlace al calendario de la tienda» (entran como borrador)')}
     ${cb('feature_lfg', 'Busco mesa: los jugadores quedan para partidas casuales en la tienda')}
     ${cb('feature_casual_league', 'Liga casual: las partidas del contador casual cuentan si todos las confirman con su cuenta')}
@@ -1163,7 +1165,7 @@ r.get('/ajustes', auth.requireAdmin, (req, res) => {
 });
 r.post('/ajustes', auth.requireAdmin, (req, res) => {
   const checks = ['show_real_names', 'notify_new', 'notify_rounds', 'notify_final', 'feature_prizes', 'feature_cash', 'feature_profiles', 'feature_meta', 'show_game_img',
-    'feature_badges', 'feature_porra', 'feature_bounties', 'feature_trades', 'feature_loans', 'feature_moments', 'feature_lfg', 'feature_casual_league', 'feature_calendar', 'feature_riftbound'];
+    'feature_badges', 'feature_porra', 'feature_bounties', 'feature_trades', 'feature_loans', 'feature_moments', 'feature_lfg', 'feature_casual_league', 'feature_calendar', 'feature_riftbound', 'feature_eventlink'];
   for (const k of Object.keys(DEFAULT_SETTINGS)) {
     if (checks.includes(k)) setSetting(k, req.body[k] ? '1' : '0');
     else if (k in req.body) setSetting(k, String(req.body[k]).trim());
