@@ -22,6 +22,7 @@ function localId(kind, ext) {
 
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
+const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
 const HEAD = { Accept: 'application/json', 'User-Agent': UA, 'apollo-require-preflight': 'true', 'apollographql-client-name': 'Esports Web', 'apollographql-client-version': '1.0.0' };
@@ -93,7 +94,7 @@ const fetchTournament = async ext => ((await gql('GetCompeteTournamentForRiftbou
 const updatedAt = async ext => (await gql('GetCompeteRbRefreshPoller', { tournamentId: String(ext) })).t?.u || null;
 
 // ---------- Guardar en las tablas de torneos ----------
-const statusOf = s => (/PROGRESS|STARTED|RUNNING|ACTIVE/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE/i.test(s || '') ? STATUS.ENDED
+const statusOf = s => (/IN_PROGRESS|STARTED|RUNNING/i.test(s || '') ? STATUS.IN_PROGRESS : /COMPLET|FINISH|ENDED|CLOSED|DONE/i.test(s || '') ? STATUS.ENDED
   : /CANCEL/i.test(s || '') ? STATUS.CANCELLED : STATUS.REGISTRATION);
 const STATUS_ES = { [STATUS.REGISTRATION]: 'Inscripción abierta', [STATUS.IN_PROGRESS]: 'En juego', [STATUS.ENDED]: 'Terminado', [STATUS.CANCELLED]: 'Cancelado' };
 const FORMAT = { CONSTRUCTED: 'Constructed', SEALED: 'Sealed', DRAFT: 'Draft', LIMITED: 'Limited' };
@@ -254,6 +255,8 @@ async function syncAll() {
   try {
     const { tournaments } = await listOrganizer();
     const ids = new Set(tournaments.map(t => String(t.id)));
+    // El buscador de su web no devuelve los que ya han empezado: estos se siguen porque se vieron antes. Los que ya estaban en marcha al estrenar esto, a mano
+    for (const ext of SEED) if (!db.prepare("SELECT 1 FROM tournaments WHERE source = 'riftbound' AND ext_id = ?").get(ext)) ids.add(ext);
     for (const r of db.prepare("SELECT ext_id FROM tournaments WHERE source = 'riftbound' AND status IN (1, 2) AND hidden = 0").all()) ids.add(r.ext_id);
     for (const ext of ids) { try { await syncOne(ext); } catch (e) { log('warn', e.message); } await sleep(900); }
     lastList = Date.now(); lastError = null;
