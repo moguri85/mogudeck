@@ -216,7 +216,7 @@ const DEFAULT_SETTINGS = {
   inactive_days: '30',
   default_price: '',
   default_prize_pct: '50',
-  tv_page_seconds: '12',
+  tv_page_seconds: '8',
   feature_prizes: '0',
   feature_cash: '0',
   feature_profiles: '1',
@@ -247,6 +247,9 @@ function settings() {
 function setSetting(key, value) {
   putSetting.run(key, value == null ? '' : String(value));
 }
+
+// La TV pasaba de pantalla demasiado despacio: el valor de antes (12 s) pasa a 8 s una sola vez
+if (!getSetting.get('mig_tv8')) { const r = getSetting.get('tv_page_seconds'); if (r && r.value === '12') putSetting.run('tv_page_seconds', '8'); putSetting.run('mig_tv8', '1'); }
 
 function log(level, msg) {
   db.prepare('INSERT INTO sync_log(level, msg) VALUES(?, ?)').run(level, String(msg).slice(0, 2000));

@@ -961,7 +961,7 @@ r.post('/commander/:id/valor', (req, res) => {
 r.get(['/tv', '/tv/:id'], (req, res) => {
   const s = settings();
   res.send(String(html`${head('TV', s)}<body class="tv">
-    <div id="tv" data-id="${req.params.id || ''}" data-seconds="${parseInt(s.tv_page_seconds, 10) || 12}"></div>
+    <div id="tv" data-id="${req.params.id || ''}" data-seconds="${parseInt(s.tv_page_seconds, 10) || 8}"></div>
     <script>window.__STORE = ${json({ name: s.store_name, logo: s.logo_url })};</script>
     <script src="/static/tv.js"></script></body></html>`));
 });

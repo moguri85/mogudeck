@@ -16,10 +16,6 @@
       if (t.kind === 'commander') {
         const pp = chunk(t.pods, 6);
         pp.forEach((p, i) => out.push({ kind: 'pods', t, rows: p, page: i + 1, pages: pp.length }));
-        if (t.status !== 'finished' && t.pods.length > 2) {
-          const az = t.pods.flatMap(p => p.players.map(x => ({ name: x.name, where: `Mesa ${p.table}`, extra: x.seat === 1 ? 'empieza' : `${x.seat}º` }))).sort((a, b) => a.name.localeCompare(b.name));
-          chunk(az, 30).forEach((rows, i, all) => out.push({ kind: 'az', t, rows, page: i + 1, pages: all.length }));
-        }
         if (t.round > 1 || t.status === 'finished') {
           const sp = chunk(t.standings, 12);
           sp.slice(0, 3).forEach((p, i) => out.push({ kind: 'cstand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 3) }));
@@ -32,11 +28,6 @@
       }
       const pages = chunk(t.pairings, 16);
       pages.forEach((p, i) => out.push({ kind: 'pairs', t, rows: p, page: i + 1, pages: pages.length }));
-      if (t.status !== 4 && t.pairings.length > 4) {
-        const az = t.pairings.flatMap(p => [{ name: p.p1, where: p.bye ? 'BYE' : `Mesa ${p.table ?? '?'}`, extra: '' }]
-          .concat(p.p2 ? [{ name: p.p2, where: `Mesa ${p.table ?? '?'}`, extra: '' }] : [])).sort((a, b) => a.name.localeCompare(b.name));
-        chunk(az, 30).forEach((rows, i, all) => out.push({ kind: 'az', t, rows, page: i + 1, pages: all.length }));
-      }
       if (t.standings.length && t.round > 1 || (t.standings.length && t.status === 4)) {
         const sp = chunk(t.standings, 12);
         sp.slice(0, 3).forEach((p, i) => out.push({ kind: 'stand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 3) }));
@@ -103,7 +94,7 @@
     let body = '';
     if (s.kind === 'pairs') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Emparejamientos</span><span>${s.t.pending} pendientes${s.pages > 1 ? ` · ${s.page}/${s.pages}` : ''}</span></div>
-        <div class="tv-pairs">${s.rows.map(p => `<div class="tv-pair ${p.hasResult ? 'done' : ''}"><div class="tn">${p.bye ? 'BYE' : esc(p.table ?? '?')}</div>
+        <div class="tv-pairs ${s.rows.length > 8 ? 'dense' : ''}">${s.rows.map(p => `<div class="tv-pair ${p.hasResult ? 'done' : ''}"><div class="tn">${p.bye ? 'BYE' : esc(p.table ?? '?')}</div>
           <div class="who"><span>${esc(p.p1)}</span>${p.p2 ? `<span>${esc(p.p2)}</span>` : '<em>ronda libre</em>'}${tags(p)}</div>
           <div class="st">${p.hasResult && !p.bye ? `${p.w1 ?? 0}-${p.w2 ?? 0}` : p.bye ? '' : 'jugando'}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'stand') {

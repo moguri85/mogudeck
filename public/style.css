@@ -1827,3 +1827,10 @@ h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display)
   .ev-cta { min-height: 40px; font-size: 16px; }
 }
 @media (min-width: 701px) { .dcard-h { justify-content: flex-start; padding-top: 20px; } }
+/* TV: con muchas mesas, cada una en una línea para que quepan todas */
+.tv-pairs.dense { gap: .8vh 1.6vw; }
+.tv-pairs.dense .tv-pair { padding: .7vh 1.2vw; font-size: 2.6vh; grid-template-columns: 7vh 1fr auto; }
+.tv-pairs.dense .tv-pair .tn { font-size: 3.4vh; }
+.tv-pairs.dense .tv-pair .who { flex-direction: row; flex-wrap: wrap; gap: 0 .8vw; align-items: baseline; min-width: 0; }
+.tv-pairs.dense .tv-pair .who > span { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+.tv-pairs.dense .tv-pair .who > span + span::before { content: "vs "; color: var(--muted); font-size: .8em; margin-right: .4vw; }
