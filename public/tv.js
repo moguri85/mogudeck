@@ -156,8 +156,18 @@
           : `<div class="tv-title" style="text-align:center;margin-top:25vh">¡Nos vemos en el próximo torneo!</div>`}</div>`;
     }
     const dots = slides.length > 1 ? `<span class="tv-dots">${slides.map((_, i) => `<span class="${i === idx % slides.length ? 'on' : ''}"></span>`).join('')}</span>` : '';
-    el.innerHTML = body + `<div class="tv-foot"><span>${esc(store.name)}</span><span>${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} ${dots}</span></div>`;
+    el.innerHTML = body + `<div class="tv-foot"><span>${esc(store.name)}</span><span>${new Date().toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' })} ${dots}</span></div>`;    fit();
   }
+  // Si la tabla o las mesas no caben en la pantalla (tele con otra proporción, ventana sin pantalla completa…), se encogen hasta que quepan
+  function fit() {
+    const box = el.querySelector('.tv-body');
+    const t = box && box.querySelector('.tv-stand, .tv-pairs, .tv-pods');
+    if (!t) return;
+    let z = 1;
+    t.style.zoom = '';
+    while (box.scrollHeight > box.clientHeight + 1 && z > 0.55) { z -= 0.04; t.style.zoom = z.toFixed(2); }
+  }
+  window.addEventListener('resize', () => fit());
 
   async function load() {
     try {
