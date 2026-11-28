@@ -105,8 +105,11 @@ async function fetchAll(id) {
 
 function save({ ev, states }) {
   const tid = localId('el', ev.id);
-  const prev = db.prepare('SELECT id FROM tournaments WHERE id = ?').get(tid);
-  const status = statusOf(ev.status);
+  const prev = db.prepare('SELECT id, ext_updated FROM tournaments WHERE id = ?').get(tid);
+  let status = statusOf(ev.status);
+  // Si en EventLink no lo cierran, pero ya pasó y se jugó, se da por terminado
+  const startMs = Date.parse(ev.actualStartTime || ev.scheduledStartTime || '');
+  if (status !== STATUS.ENDED && status !== STATUS.CANCELLED && !isNaN(startMs) && Date.now() - startMs > 14 * 3600e3 && states.length) status = STATUS.ENDED;
   const last = states[states.length - 1] || null;
   // Rondas: de cada estado, la ronda de ese número (así sale con sus resultados finales)
   const rounds = [];
@@ -127,11 +130,21 @@ function save({ ev, states }) {
         formats = excluded.formats, start_date = CASE WHEN tournaments.start_date_manual = 1 THEN tournaments.start_date ELSE excluded.start_date END,
         last_pair = excluded.last_pair, rounds_total = excluded.rounds_total, current_round = excluded.current_round, synced_at = datetime('now'),
         details_synced_at = datetime('now'), ext_url = excluded.ext_url, price_cents = COALESCE(tournaments.price_cents, excluded.price_cents), final_synced = excluded.final_synced`)
-      .run({ id: tid, guid: `el:${ev.id}`, name: ev.title, status, sd: STATUS_ES[status], type: ev.pairingType || null,
+      .run({ id: tid, guid: `el:${ev.id}`, name: ev.title, status, sd: STATUS_ES[status] + (/NOT_STARTED|SCHEDULED|UPCOMING|REGISTRATION|RUNNING|IN_PROGRESS|PLAYING|ENDED|COMPLET|FINISH|CLOSED|CANCEL/i.test(ev.status || '') ? '' : ` (${ev.status})`), type: ev.pairingType || null,
         formats: JSON.stringify(ev.eventFormat && ev.eventFormat.name ? [ev.eventFormat.name] : []), start: ev.actualStartTime || ev.scheduledStartTime || null,
         lp: status === STATUS.IN_PROGRESS ? new Date().toISOString() : ev.actualEndTime || null, total: total || null, cur: rounds.length,
         ext: String(ev.id), url: orgId() ? `https://eventlink.wizards.com/stores/${orgId()}/events/${ev.id}` : 'https://eventlink.wizards.com/', price: fee,
         final: status === STATUS.ENDED ? 1 : 0 });
+    // Al traerlo por primera vez, se ocultan los que no son torneos (rol, juego libre) y los de Commander que ya llevamos aquí
+    if (!prev || prev.ext_updated !== 'h1') {
+      db.prepare("UPDATE tournaments SET ext_updated = 'h1' WHERE id = ?").run(tid);
+      const fmt = `${ev.eventFormat && ev.eventFormat.name || ''} ${ev.title || ''}`;
+      const day = !isNaN(startMs) ? new Date(startMs).toLocaleDateString('sv-SE', { timeZone: require('./config').tz }) : null;
+      const cmdSameDay = day && /commander/i.test(fmt) && db.prepare('SELECT start_date FROM cmd_events WHERE start_date IS NOT NULL').all()
+        .some(e => new Date(e.start_date).toLocaleDateString('sv-SE', { timeZone: require('./config').tz }) === day);
+      if (/dungeons|d&d|\brol\b/i.test(fmt) || (/\bother\b/i.test(ev.eventFormat && ev.eventFormat.name || '') && /play|libre|abierto/i.test(ev.title || '')) || cmdSameDay)
+        db.prepare('UPDATE tournaments SET hidden = 1 WHERE id = ?').run(tid);
+    }
     if (!prev) db.prepare('UPDATE tournaments SET notified_new = 1, notified_round = CASE WHEN status = 4 THEN 999 ELSE 0 END, notified_final = CASE WHEN status = 4 THEN 1 ELSE 0 END WHERE id = ?').run(tid);
 
     db.prepare('DELETE FROM rounds WHERE tournament_id = ?').run(tid);
