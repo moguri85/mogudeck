@@ -21,7 +21,7 @@ r.get('/magic', (req, res) => {
         y el resto cada 5 minutos. Salen en directo (web, TV y QR de mesas), en resultados y cuentan para el ranking, los perfiles y las insignias.</p>
       ${st.connected
         ? html`<p>${st.status === 'caducada' ? html`<b class="warn">La sesión ha caducado: vuelve a conectarla.</b>` : html`Conectada${st.who ? html` como <b>${st.who}</b>` : ''}.`}
-          ${st.lastList ? ` Última lectura: ${when(new Date(st.lastList).toISOString())}.` : ''}${st.running ? ' Leyendo ahora…' : ''}</p>
+          ${st.lastList ? ` Última lectura: ${when(new Date(st.lastList).toISOString())}${st.pageInfo ? ` (${st.pageInfo})` : ''}.` : ''}${st.running ? ' Leyendo ahora…' : ''}</p>
           ${st.lastError ? html`<p class="aflash err">Último error: ${st.lastError}</p>` : ''}
           <form method="post" action="/admin/magic/leer" class="inline"><button class="btn small">Leer ahora</button></form>
           <form method="post" action="/admin/magic/desconectar" class="inline"><button class="btn small ghost">Desconectar</button></form>`

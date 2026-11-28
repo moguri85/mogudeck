@@ -81,6 +81,8 @@ const Q_STATE = `query st($eventId: ID!, $round: Int!) { gameStateV2AtRound(even
     matches { matchId isBye teamIds tableNumber results { isBye wins losses draws teamId } }
     standings { teamId rank wins losses draws matchPoints gameWinPercent opponentGameWinPercent opponentMatchWinPercent } }
 } }`;
+// Eventos de la tienda (la primera página, sin filtro: el filtro no hace falta y no sabemos sus campos)
+const Q_PAGE = `query page($organizationId: ID!) { eventPage(organizationId: $organizationId) { events { id title status scheduledStartTime } pageInfo { page pageSize totalResults } } }`;
 const Q_LIVE = `query live($id: ID!) { eventsInProgress(organizationId: $id) { id title scheduledStartTime status round minimumRounds playoffRounds } }`;
 
 const statusOf = s => (/NOT_STARTED|SCHEDULED|UPCOMING|REGISTRATION/i.test(s || '') ? STATUS.REGISTRATION : /RUNNING|IN_PROGRESS|PLAYING/i.test(s || '') ? STATUS.IN_PROGRESS : /ENDED|COMPLET|FINISH|CLOSED/i.test(s || '') ? STATUS.ENDED
@@ -185,8 +187,8 @@ function save({ ev, states }) {
 }
 
 // ---------- Sincronización ----------
-let running = false, lastList = 0;
-const state = () => ({ running, lastError, lastList, org: orgId(), connected: !!setting('el_refresh'), status: setting('el_status') || '', who: setting('el_who') || '' });
+let running = false, lastList = 0, pageInfo = '';
+const state = () => ({ running, lastError, lastList, pageInfo, org: orgId(), connected: !!setting('el_refresh'), status: setting('el_status') || '', who: setting('el_who') || '' });
 async function syncOne(id) {
   const tid = save(await fetchAll(id));
   try { await require('./sync').runNotifications(tid); } catch (e) { /* avisos opcionales */ }
@@ -197,7 +199,16 @@ async function syncAll({ liveOnly = false } = {}) {
   running = true;
   try {
     const ids = new Set();
-    if (!liveOnly && orgId()) for (const e of (await gql(Q_LIVE, { id: orgId() })).eventsInProgress || []) ids.add(String(e.id));
+    if (!liveOnly && orgId()) {
+      for (const e of (await gql(Q_LIVE, { id: orgId() })).eventsInProgress || []) ids.add(String(e.id));
+      // Los de la tienda de 2 días atrás a 3 semanas vista (los demás, si hacen falta, se añaden por su enlace)
+      try {
+        const evs = ((await gql(Q_PAGE, { organizationId: orgId() })).eventPage || {}).events || [];
+        const from = Date.now() - 2 * 864e5, to = Date.now() + 21 * 864e5;
+        for (const e of evs) { const t = Date.parse(e.scheduledStartTime || ''); if (!isNaN(t) && t >= from && t <= to && !/CANCEL/i.test(e.status || '')) ids.add(String(e.id)); }
+        pageInfo = `${evs.length} eventos en su lista`;
+      } catch (e) { pageInfo = e.message; log('warn', `EventLink lista: ${e.message}`); }
+    }
     for (const r of db.prepare(`SELECT ext_id FROM tournaments WHERE source = 'eventlink' AND hidden = 0 AND (status = 2 ${liveOnly ? '' : 'OR status = 1 OR (status = 4 AND final_synced = 0)'})`).all()) ids.add(r.ext_id);
     for (const id of ids) { try { await syncOne(id); } catch (e) { log('warn', e.message); } await sleep(700); }
     if (!liveOnly) lastList = Date.now();
