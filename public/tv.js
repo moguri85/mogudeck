@@ -26,8 +26,12 @@
         if (t.status === 'finished' && t.night) out.unshift({ kind: 'night', t });
         continue;
       }
-      const pages = chunk(t.pairings, 16);
-      pages.forEach((p, i) => out.push({ kind: 'pairs', t, rows: p, page: i + 1, pages: pages.length }));
+      // En la eliminatoria se enseña el cuadro en vez de los emparejamientos (y al terminar, antes de la clasificación)
+      if (t.bracket && (t.bracket.current || t.status === 4)) out.push({ kind: 'bracket', t });
+      if (!(t.bracket && t.bracket.current)) {
+        const pages = chunk(t.pairings, 16);
+        pages.forEach((p, i) => out.push({ kind: 'pairs', t, rows: p, page: i + 1, pages: pages.length }));
+      }
       if (t.standings.length && t.round > 1 || (t.standings.length && t.status === 4)) {
         const sp = chunk(t.standings, 16);
         sp.slice(0, 4).forEach((p, i) => out.push({ kind: 'stand', t, rows: p, page: i + 1, pages: Math.min(sp.length, 4) }));
@@ -83,7 +87,7 @@
 
   function head(t) {
     return `<div class="tv-head" style="--g:${t.color}">
-      <div class="tv-title"><small>${esc(t.gameLabel)} · ${t.roundKind === 'final' ? 'Mesa final' : t.round ? `Ronda ${t.round}${(t.roundsTotal || t.roundsPlanned) ? '/' + (t.roundsTotal || t.roundsPlanned) : ''}` : esc(t.statusDesc || '')}</small>${esc(t.name)}</div>
+      <div class="tv-title"><small>${esc(t.gameLabel)} · ${t.roundKind === 'final' ? 'Mesa final' : t.bracket && t.bracket.current ? `Top ${t.bracket.rounds[0].matches.length * 2} · ${esc(t.roundName || 'Eliminatoria')}` : t.round ? `Ronda ${t.round}${(t.roundsTotal || t.roundsPlanned) ? '/' + (t.roundsTotal || t.roundsPlanned) : ''}` : esc(t.statusDesc || '')}</small>${esc(t.name)}</div>
       ${progress(t)}<div id="clock">${clock(t)}</div><img class="tv-qr" src="${t.qr}" alt=""></div>`;
   }
 
@@ -97,6 +101,13 @@
         <div class="tv-pairs ${s.rows.length > 8 ? 'dense' : ''}">${s.rows.map(p => `<div class="tv-pair ${p.hasResult ? 'done' : ''}"><div class="tn">${p.bye ? 'BYE' : esc(p.table ?? '?')}</div>
           <div class="who"><span>${esc(p.p1)}</span>${p.p2 ? `<span>${esc(p.p2)}</span>` : '<em>ronda libre</em>'}${tags(p)}</div>
           <div class="st">${p.hasResult && !p.bye ? `${p.w1 ?? 0}-${p.w2 ?? 0}` : p.bye ? '' : 'jugando'}</div></div>`).join('')}</div></div>`;
+    } else if (s.kind === 'bracket') {
+      const br = s.t.bracket;
+      const side = (m, k) => { const w = k === 1 ? m.w1 : m.w2; return `<div class="bk-p ${m.win === k ? 'win' : m.win ? 'lose' : ''}"><span>${esc(k === 1 ? m.p1 : m.p2)}</span><b>${m.has || w ? (w ?? 0) : ''}</b></div>`; };
+      body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>${br.champion ? `Campeón: ${esc(br.champion)}` : `Top ${br.rounds[0].matches.length * 2}`}</span><span>${s.t.pending ? `${s.t.pending} jugando` : ''}</span></div>
+        <div class="bracket tv" style="--cols:${br.rounds.length}">${br.rounds.map(r => `<div class="bk-col"><div class="bk-h">${esc(r.name)}</div><div class="bk-ms">
+          ${r.matches.map(m => m ? `<div class="bk-m ${m.has ? 'done' : 'live'}">${side(m, 1)}${side(m, 2)}${!m.has && m.table ? `<small>Mesa ${esc(m.table)}</small>` : ''}</div>`
+            : '<div class="bk-m tbd"><div class="bk-p"><span>Por decidir</span></div><div class="bk-p"><span>Por decidir</span></div></div>').join('')}</div></div>`).join('')}</div></div>`;
     } else if (s.kind === 'stand') {
       body = head(s.t) + `<div class="tv-body" style="--g:${s.t.color}"><div class="tv-sub"><span>Clasificación${s.t.status === 4 ? ' final' : ''}</span><span>${s.pages > 1 ? `${s.page}/${s.pages}` : ''}</span></div>
         <table class="tv-stand ${s.rows.length > 12 ? 'dense' : ''}"><thead><tr><th>#</th><th>Jugador</th><th class="num">Pts</th><th class="num">Récord</th><th class="num">PGO</th><th class="num">JGE</th><th class="num">JGO</th></tr></thead><tbody>
@@ -161,7 +172,7 @@
   // Si la tabla o las mesas no caben en la pantalla (tele con otra proporción, ventana sin pantalla completa…), se encogen hasta que quepan
   function fit() {
     const box = el.querySelector('.tv-body');
-    const t = box && box.querySelector('.tv-stand, .tv-pairs, .tv-pods');
+    const t = box && box.querySelector('.tv-stand, .tv-pairs, .tv-pods, .bracket');
     if (!t) return;
     let z = 1;
     t.style.zoom = '';

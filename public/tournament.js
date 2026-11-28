@@ -108,6 +108,22 @@
       <p class="legend"><b>V-D-E</b> victorias, derrotas y empates · <b>Forma</b> resultado de cada ronda (V, D, E; B = bye) · Desempates: <b>PGO%</b> partidas ganadas por tus rivales, <b>JGE%</b> juegos que has ganado, <b>JGO%</b> juegos ganados por tus rivales.</p>`;
   }
 
+  // Cuadro de la eliminatoria: columnas por ronda, el ganador de cada mesa resaltado
+  function bracketPanel() {
+    const br = snap.bracket;
+    const top = br.rounds[0].matches.length * 2;
+    const side = (m, k) => {
+      const name = k === 1 ? m.p1 : m.p2, team = k === 1 ? m.t1 : m.t2, w = k === 1 ? m.w1 : m.w2;
+      return `<div class="bk-p ${m.win === k ? 'win' : m.win ? 'lose' : ''} ${isMe(team) ? 'me' : ''}"><span>${esc(name)}</span><b>${m.has || w ? (w ?? 0) : ''}</b></div>`;
+    };
+    return `${br.champion ? `<div class="bk-champ">🏆 <b>${esc(br.champion)}</b> gana el torneo</div>` : ''}
+      <div class="bracket" style="--cols:${br.rounds.length}">${br.rounds.map(r => `<div class="bk-col"><div class="bk-h">${esc(r.name)}</div><div class="bk-ms">
+        ${r.matches.map(m => m ? `<div class="bk-m ${m.has ? 'done' : 'live'}">${side(m, 1)}${side(m, 2)}${!m.has && m.table ? `<small>Mesa ${esc(m.table)} · jugando</small>` : ''}</div>`
+          : '<div class="bk-m tbd"><div class="bk-p"><span>Por decidir</span></div><div class="bk-p"><span>Por decidir</span></div></div>').join('')}
+      </div></div>`).join('')}</div>
+      <p class="legend">Top ${top} a eliminación directa, sin tiempo de ronda.</p>`;
+  }
+
   function roundsPanel() {
     if (!snap.rounds.length) return '<p class="muted">Aún no hay rondas.</p>';
     const sel = state.roundSel || snap.round;
@@ -121,14 +137,16 @@
     const pos = focus && document.activeElement.selectionStart;
     let h = '';
     if (snap.round && snap.status !== 4) {
-      h += livebar({ title: `Ronda <b>${snap.round}</b>${snap.roundsTotal ? ` de ${snap.roundsTotal}` : ''}`, end: snap.timerEnd, done: snap.done, total: snap.tables, note: 'mesas con resultado' });
+      h += livebar({ title: snap.bracket && snap.bracket.current ? `Top ${snap.bracket.rounds[0].matches.length * 2} · <b>${esc(snap.roundName || 'Eliminatoria')}</b>` : `Ronda <b>${snap.round}</b>${snap.roundsTotal ? ` de ${snap.roundsTotal}` : ''}`, end: snap.timerEnd, done: snap.done, total: snap.tables, note: 'mesas con resultado' });
     }
     h += meCard();
     if (snap.round || snap.standings.length) {
-      const items = [['pair', snap.status === 4 ? 'Última ronda' : 'Emparejamientos'], ['stand', snap.status === 4 ? 'Clasificación final' : 'Clasificación'], ['rounds', 'Rondas']];
-      const active = !state.picked && snap.status === 4 ? 'stand' : items.some(i => i[0] === state.tab) ? state.tab : 'pair';
+      const br = snap.bracket;
+      const items = [...(br ? [['top', `Top ${br.rounds[0].matches.length * 2}`]] : []), ...(br && br.current ? [] : [['pair', snap.status === 4 ? 'Última ronda' : 'Emparejamientos']]),
+        ['stand', snap.status === 4 ? 'Clasificación final' : 'Clasificación'], ['rounds', 'Rondas']];
+      const active = !state.picked && br && (br.current || snap.status === 4) ? 'top' : !state.picked && snap.status === 4 ? 'stand' : items.some(i => i[0] === state.tab) ? state.tab : items[0][0];
       h += tabs('main', items, active);
-      h += `<div class="panel-pub">${active === 'pair' ? pairingsPanel(snap.pairings, true) : active === 'stand' ? standingsPanel() : roundsPanel()}</div>`;
+      h += `<div class="panel-pub">${active === 'top' ? bracketPanel() : active === 'pair' ? pairingsPanel(snap.pairings, true) : active === 'stand' ? standingsPanel() : roundsPanel()}</div>`;
     } else if (snap.status === 1) {
       h += `<section class="roster"><h2 class="sec">Inscritos (${snap.roster.length})</h2><div class="rgrid">${snap.roster.map(p => `<span>${esc(p.name)}</span>`).join('')}</div></section>`;
     }

@@ -121,6 +121,31 @@ function counts(tid) {
     SUM(paid) paid, SUM(checked_in) checked FROM players WHERE tournament_id = ? AND status != 0`).get(tid);
 }
 
+// Cuadro de la eliminatoria (top 8…): rondas de la fase final con sus mesas en orden; las que aún no tienen rivales salen «por decidir»
+function bracket(tid, admin = false) {
+  const t = tournament(tid);
+  if (!t || !['riftbound', 'eventlink'].includes(t.source)) return null;
+  const rs = db.prepare(`SELECT * FROM rounds WHERE tournament_id = ? AND phase_sort = (SELECT MAX(phase_sort) FROM rounds WHERE tournament_id = ?) AND phase_sort > 1
+    ORDER BY sort_order`).all(tid, tid);
+  if (!rs.length) return null;
+  const pm = playersMap(tid);
+  const out = [];
+  let size = null;
+  rs.forEach((r, i) => {
+    const ms = db.prepare('SELECT * FROM matches WHERE tournament_id = ? AND round_number = ? AND is_bye = 0 ORDER BY COALESCE(slot, 999), table_number').all(tid, r.sort_order);
+    if (i === 0) size = Math.max(ms.length, 1);
+    const want = Math.max(1, Math.round(size / Math.pow(2, i)));
+    const list = ms.map(m => ({ slot: m.slot, table: m.table_number, p1: playerName(pm.get(m.team1), admin), p2: playerName(pm.get(m.team2), admin), t1: m.team1, t2: m.team2,
+      w1: m.wins1, w2: m.wins2, has: !!m.has_result, win: m.has_result ? (m.wins1 > m.wins2 ? 1 : m.wins2 > m.wins1 ? 2 : 0) : 0 }));
+    // Huecos por decidir, colocados en su posición si se conoce
+    const slots = Array.from({ length: Math.max(want, list.length) }, () => null);
+    for (const m of list) { const k = m.slot && m.slot <= slots.length && !slots[m.slot - 1] ? m.slot - 1 : slots.indexOf(null); slots[k] = m; }
+    out.push({ name: r.name, round: r.sort_order, matches: slots });
+  });
+  const last = out[out.length - 1], f = last.matches.length === 1 && last.matches[0];
+  return { rounds: out, champion: f && f.has && f.win ? (f.win === 1 ? f.p1 : f.p2) : null, current: out.some(r => r.round === currentRound(tid)) };
+}
+
 function liveSnapshot(tid, admin = false) {
   const t = tournament(tid);
   if (!t) return null;
@@ -148,12 +173,15 @@ function liveSnapshot(tid, admin = false) {
       pkey: resolveKey(p.username ? 'u:' + p.username.toLowerCase() : p.user_key) }))
       .sort((a, b) => a.name.localeCompare(b.name)),
     standings: standings(tid, admin),
+    bracket: bracket(tid, admin),
+    roundName: t.source && t.source !== 'melee' && round ? (db.prepare('SELECT name FROM rounds WHERE tournament_id = ? AND sort_order = ?').get(tid, round) || {}).name || null : null,
     players: counts(tid),
     syncedAt: t.synced_at,
   };
 }
 
 module.exports = {
+  bracket,
   isLive, tournament, liveTournaments, upcomingTournaments, recentTournaments, pairings, standings,
   currentRound, liveSnapshot, playerName, playersMap, counts, records, summary,
 };

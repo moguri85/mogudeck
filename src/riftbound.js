@@ -9,7 +9,8 @@ addColumn('tournaments', 'source', "TEXT DEFAULT 'melee'");
 addColumn('tournaments', 'ext_id', 'TEXT');
 addColumn('tournaments', 'ext_url', 'TEXT');
 addColumn('tournaments', 'ext_updated', 'TEXT');
-addColumn('tournaments', 'linked_ref', 'TEXT'); // el mismo evento llevado aquí (p. ej. 'c:4', un Commander): no sale repetido
+addColumn('tournaments', 'linked_ref', 'TEXT');
+addColumn('matches', 'slot', 'INTEGER'); // posición en el cuadro de la eliminatoria (1, 2…) para dibujarlo // el mismo evento llevado aquí (p. ej. 'c:4', un Commander): no sale repetido
 db.exec(`CREATE TABLE IF NOT EXISTS ext_ids (kind TEXT NOT NULL, ext TEXT NOT NULL, id INTEGER PRIMARY KEY AUTOINCREMENT, UNIQUE (kind, ext));
 INSERT OR IGNORE INTO sqlite_sequence (name, seq) SELECT 'ext_ids', 900000000 WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'ext_ids');`);
 
@@ -24,7 +25,7 @@ function localId(kind, ext) {
 const BASE = 'https://events.playriftbound.com';
 const PUBLIC = 'https://playriftbound.com/es-ES/events/';
 // Si cambia cómo se guardan, se vuelven a guardar todos aunque en su web no haya cambios
-const SAVE_V = 5;
+const SAVE_V = 6;
 const SEED = ['117557998796655771']; // Valencia Rift Cup (28/11/2026), en juego al estrenar la integración
 const DEFAULT_ORG = '01a0c36f-9b35-7de2-816e-1ff2d84aebdc'; // Júpiter Juegos Valencia
 const UA = 'Mozilla/5.0 (compatible; JupiterTorneos/1.0; +https://www.moguri.es/jupiter)';
@@ -116,7 +117,8 @@ function save(t) {
   const elimRounds = cfg.finalBracketStage?.participantCount ? Math.ceil(Math.log2(cfg.finalBracketStage.participantCount)) : 0;
   const total = Math.max(rounds.length, (cfg.roundCount || 0) + elimRounds);
   const live = rounds.filter(x => /PROGRESS/i.test(x.rd.status || '')).pop();
-  const timerEnd = live && live.rd.startedAt && live.rd.roundDuration ? new Date(new Date(live.rd.startedAt).getTime() + live.rd.roundDuration * 60e3).toISOString() : null;
+  // La eliminatoria va sin tiempo de ronda
+  const timerEnd = live && /SWISS/i.test(live.sec.type || '') && live.rd.startedAt && live.rd.roundDuration ? new Date(new Date(live.rd.startedAt).getTime() + live.rd.roundDuration * 60e3).toISOString() : null;
   const teamId = ext => localId('rbteam', `${t.id}:${ext}`);
   const need = Math.ceil((Number(String(cfg.matchFormat || 'BO3').replace(/\D/g, '')) || 3) / 2);
 
@@ -143,7 +145,7 @@ function save(t) {
     for (const x of rounds) {
       const swiss = /SWISS/i.test(x.sec.type || '');
       insR.run(localId('rbround', `${t.id}:${x.sec.esportsSectionId}:${x.rd.roundNumber}`), tid, x.si + 1, swiss ? 'Suizo' : 'Eliminatoria', x.si + 1,
-        swiss ? `Ronda ${x.rd.roundNumber}` : elimName((x.rd.matches || []).length || 1), x.n);
+        swiss ? `Ronda ${x.rd.roundNumber}` : elimName(Math.max(1, Math.round((((x.sec.rounds || [])[0] || {}).matches || []).length / Math.pow(2, (x.sec.rounds || []).indexOf(x.rd))))), x.n);
     }
 
     // Jugadores: los que juegan (con su equipo del torneo) y, antes de empezar, los inscritos
@@ -169,7 +171,7 @@ function save(t) {
     // Partidas
     db.prepare('DELETE FROM matches WHERE tournament_id = ?').run(tid);
     const insM = db.prepare(`INSERT OR REPLACE INTO matches (guid, tournament_id, round_id, round_number, phase_sort, table_number, published, has_result, is_bye,
-      team1, team2, wins1, wins2, draws, result_string, created_at) VALUES (@guid, @tid, @rid, @n, @ps, @table, 1, @has, @bye, @t1, @t2, @w1, @w2, @d, @res, @at)`);
+      team1, team2, wins1, wins2, draws, result_string, created_at, slot) VALUES (@guid, @tid, @rid, @n, @ps, @table, 1, @has, @bye, @t1, @t2, @w1, @w2, @d, @res, @at, @slot)`);
     for (const x of rounds) {
       const rid = localId('rbround', `${t.id}:${x.sec.esportsSectionId}:${x.rd.roundNumber}`);
       for (const m of x.rd.matches || []) {
@@ -185,11 +187,11 @@ function save(t) {
         const has = done(m.status) || done(x.rd.status) || (Array.isArray(m.teamOutcomes) && m.teamOutcomes.some(o => o && o.outcome)) || Math.max(w1, w2) >= need;
         insM.run({ guid: `rb:${m.esportsMatchId}`, tid, rid, n: x.n, ps: x.si + 1, table: m.tableNumber ?? null, has: has ? 1 : 0, bye: b ? 0 : 1,
           t1: a ? teamId(a.esportsTeamId) : null, t2: b ? teamId(b.esportsTeamId) : null, w1, w2, d: draws,
-          res: has ? `${w1}-${w2}${draws ? `-${draws}` : ''}` : null, at: x.rd.startedAt || null });
+          res: has ? `${w1}-${w2}${draws ? `-${draws}` : ''}` : null, at: x.rd.startedAt || null, slot: Number((String(m.structuralId || '').match(/m(\d+)$/) || [])[1]) || null });
       }
       for (const bye of x.rd.byeTeamIds || []) {
         insM.run({ guid: `rb:bye:${x.rd.roundNumber}:${x.sec.esportsSectionId}:${bye}`, tid, rid, n: x.n, ps: x.si + 1, table: null, has: 1, bye: 1,
-          t1: teamId(bye), t2: null, w1: 2, w2: 0, d: 0, res: 'Bye', at: x.rd.startedAt || null });
+          t1: teamId(bye), t2: null, w1: 2, w2: 0, d: 0, res: 'Bye', at: x.rd.startedAt || null, slot: null });
       }
     }
 
