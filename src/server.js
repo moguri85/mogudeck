@@ -52,6 +52,7 @@ const accounts = require('./accounts');
 app.use(accounts.middleware);
 app.use((req, res, next) => require('./reqctx').run({ account: req.account }, next));
 app.use(auth.sameOrigin);
+app.use(require('./audit').middleware); // auditoría de acciones (admin y jugadores)
 
 app.get('/healthz', (req, res) => {
   const ext = s => { try { const x = require(s).state(); return { running: x.running, lastList: x.lastList, lastError: x.lastError, connected: x.connected, info: x.pageInfo }; } catch (e) { return null; } };
