@@ -1842,3 +1842,7 @@ h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display)
 .syncwarn li a { color: inherit; }
 /* TV: clasificación de 16 por pantalla */
 .tv-stand.dense { font-size: 2.45vh; } .tv-stand.dense td, .tv-stand.dense th { padding: .5vh 1vw; } .tv-stand.dense th { font-size: 1.7vh; }
+/* Autocompletar comandantes */
+.cmdac { position: absolute; z-index: 1000; list-style: none; margin: 0; padding: 4px; background: #fff; border: 1px solid #ddd; border-radius: 12px; box-shadow: 0 14px 30px -12px rgba(0,0,0,.3); max-height: 320px; overflow: auto; }
+.cmdac li { padding: 10px 12px; border-radius: 8px; cursor: pointer; font-size: 15px; color: #141414; }
+.cmdac li:hover, .cmdac li.on { background: #fff3e6; color: #b25200; }

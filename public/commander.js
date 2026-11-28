@@ -92,8 +92,8 @@
           ${snap.deckLocked ? '<span class="small muted">Mazo cerrado: el torneo ya empezó</span>' : `<a class="jbtn${v != null ? '-outline' : ''}" href="${B}/valor-mazo?evento=${id}">${v != null ? 'Cambiar mazo' : 'Validar mi mazo'}</a>`}</div>`;
       })() : ''}
       ${snap.status !== 'finished' ? (() => { const [c1, c2] = String((snap.roster.find(p => p.id === me.id) || {}).deck || '').split(/\s+\+\s+/);
-        return `<div class="deckrow"><label for="deck-in">Tu comandante</label><input id="deck-in" value="${esc(c1 || '')}" placeholder="p. ej. Atraxa, Praetors' Voice" maxlength="80">
-        <label for="deck-in2" class="small">Compañero (solo si juegas con dos comandantes)</label><input id="deck-in2" value="${esc(c2 || '')}" placeholder="p. ej. Haldan, Avid Arcanist" maxlength="80">
+        return `<div class="deckrow"><label for="deck-in">Tu comandante</label><input id="deck-in" value="${esc(c1 || '')}" placeholder="p. ej. Atraxa, Praetors' Voice" maxlength="80" data-cmd-ac autocomplete="off">
+        <label for="deck-in2" class="small">Compañero (solo si juegas con dos comandantes)</label><input id="deck-in2" value="${esc(c2 || '')}" placeholder="p. ej. Haldan, Avid Arcanist" maxlength="80" data-cmd-ac autocomplete="off">
         <button class="jbtn-outline" id="deck-ok">Guardar</button><span id="deck-msg" class="small muted"></span></div>`; })() : ''}
       ${snap.status === 'running' ? '</details>' : ''}
       ${st && st.form.length ? `<div class="me-stats"><span><b>${st.rank}º</b> puesto</span><span><b>${st.points}</b> pts</span><span><b>${st.wins}</b> victorias</span>${formDots(st.form, f => `R${f.r} ${formChip(f)}`)}</div>` : ''}

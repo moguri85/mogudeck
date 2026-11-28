@@ -697,7 +697,7 @@ r.get('/commander/:id', (req, res) => {
     ${ev.info && ev.status === 'running' ? html`<section class="infobox after"><h2>Información</h2>${infoHtml(`c:${ev.id}`, ev.info)}</section>` : ''}
     ${(ev.budget_cents || ev.bracket_max || ev.legal_check) && ev.status !== 'setup' ? budgetBox(ev) : ''}
     <script>window.__CSNAP = ${json(snap)};</script>
-    <script src="/static/ui.js"></script><script src="/static/commander.js"></script>`)));
+    <script src="/static/ui.js"></script><script src="/static/commander.js"></script><script src="/static/cmdac.js"></script>`)));
 });
 
 // Check-in del jugador al llegar (QR impreso en la tienda, con código secreto)

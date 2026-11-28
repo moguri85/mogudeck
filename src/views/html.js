@@ -142,6 +142,7 @@ ${body}
 </main></div>
 <script src="/static/app.js"></script>
 <script src="/static/rich.js"></script>
+<script src="/static/cmdac.js"></script>
 </body></html>`;
 }
 
