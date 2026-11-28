@@ -407,6 +407,12 @@
     return `left:${(pos.x * 100).toFixed(2)}%;top:${(pos.y * 100).toFixed(2)}%`;
   }
   // Botón grande en el centro de la mesa: «Pasar turno» (girado hacia quien tiene el turno) o, si aún no hay turnos, «Empezar turnos»
+  // Deshacer y rehacer a los lados del botón del centro
+  function centerUndo() {
+    if (!mine() || arrange || raffle || st.done) return '';
+    return `<button class="lf-cur undo" style="${cpPos()}" data-undo-last aria-label="Deshacer" title="Deshacer (hasta el último pasar turno)" ${canUndo() ? '' : 'disabled'}>↶</button>`
+      + `<button class="lf-cur redo" style="${cpPos()}" data-redo aria-label="Rehacer" title="Rehacer" ${canRedo() ? '' : 'disabled'}>↷</button>`;
+  }
   function centerPass(rotd) {
     if (!mine() || arrange || raffle || st.done) return '';
     if (!st.turn) return `<button class="lf-cpass start" style="${cpPos()}" data-turns aria-label="Empezar turnos"><b>Empezar turnos</b><small>quién empieza</small></button>`;
@@ -699,7 +705,7 @@
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? `<button data-undo-last class="ur" aria-label="Deshacer" title="Deshacer (hasta el último pasar turno)" ${canUndo() ? '' : 'disabled'}>↶</button><button data-redo class="ur" aria-label="Rehacer" title="Rehacer" ${canRedo() ? '' : 'disabled'}>↷</button>` : ''}${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${lapMode() && canPlay && timeOver() && !st.sudden ? `<button data-sudden="1" data-newturn="1" class="hot" ${lapDone() ? '' : 'disabled title="Se puede cuando juegue el último de la vuelta"'}>Muerte súbita</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${lapMode() && canPlay && timeOver() && !st.sudden ? `<button data-sudden="1" data-newturn="1" class="hot" ${lapDone() ? '' : 'disabled title="Se puede cuando juegue el último de la vuelta"'}>Muerte súbita</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
       ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button><button data-exsheet>Contadores extra</button><button data-dice>Dados y moneda</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? `<button data-new>Cambiar jugadores</button>${room ? '<button data-roomsh>Compartir partida (código)</button>' : '<button data-share-room>Compartir con otros móviles</button>'}` : '<button data-whoami>Cambiar quién soy</button>'}
@@ -707,7 +713,7 @@
       ${!mine() ? whoView() : ''}
       ${err ? `<div class="lf-err" role="alert">${esc(err)}</div>` : ''}
       ${arrange ? '<div class="lf-arrtip">Toca un jugador y luego el sitio donde lo quieres. Solo cambia en este aparato.</div>' : ''}
-      <div class="lf-grid">${centerPass(rotd)}${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
+      <div class="lf-grid">${centerPass(rotd)}${centerUndo()}${top.length ? `<div class="lf-r top">${top.map(p => panel(p, st.players.indexOf(p), rotd(p, true))).join('')}</div>` : ''}<div class="lf-r">${(topN ? bot.slice().reverse() : bot).map(p => panel(p, st.players.indexOf(p), rotd(p, false))).join('')}</div></div>
       ${arrange ? '' : endView()}${sheet ? sheetView() : ''}${artSheet ? artSheetView() : ''}${hist ? histView() : ''}${turnSheet ? turnSheetView() : ''}${exSheet ? exSheetView() : ''}${survey ? surveyView() : ''}${roomInfo ? roomView() : ''}${league ? leagueView() : ''}${dice ? diceView() : ''}${asking ? askView() : ''}</div>`;
     bind();
   }
