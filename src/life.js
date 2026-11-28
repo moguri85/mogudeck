@@ -72,7 +72,15 @@ function load(eventId, podId, create = true) {
 function view(eventId, podId) {
   const x = load(eventId, podId);
   return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 5, comboSeat: x.ev.combo_seat || 1, comboLabel: x.ev.combo_label || 'Combos de 3 o más cartas', turnWarn: x.ev.turn_warn ?? 5,
-    extraTurns: x.ev.extra_turns ?? 5, timeMode: x.ev.time_mode || 'lap', judge: judgeOpen(podId) };
+    extraTurns: x.ev.extra_turns ?? 5, timeMode: x.ev.time_mode || 'lap', judge: judgeOpen(podId), canUndo: !!undoable(podId), canRedo: !!redoable(podId) };
+}
+// Deshacer / rehacer: solo los cambios de vidas, veneno y comandante desde el último «pasar turno»
+const CHG = "kind IN ('life','poison','cmd')";
+const lastTurnId = podId => (db.prepare("SELECT MAX(id) m FROM cmd_life_log WHERE pod_id = ? AND kind = 'turn'").get(podId) || {}).m || 0;
+function undoable(podId) { return db.prepare(`SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND ${CHG} AND id > ? ORDER BY id DESC LIMIT 1`).get(podId, lastTurnId(podId)) || null; }
+function redoable(podId) {
+  const lastOk = (db.prepare(`SELECT MAX(id) m FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND ${CHG}`).get(podId) || {}).m || 0;
+  return db.prepare(`SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 1 AND ${CHG} AND id > ? ORDER BY id ASC LIMIT 1`).get(podId, Math.max(lastOk, lastTurnId(podId))) || null;
 }
 const cmdKey = fromId => (fromId < 0 ? `${-fromId}b` : String(fromId));
 const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
@@ -115,12 +123,13 @@ function history(eventId, podId, limit = 300) {
   const names = new Map(x.players.map(p => [p.id, C.pubName(p)]));
   const nm = id => names.get(id) || '—';
   const sg = n => (n > 0 ? `+${n}` : `−${-n}`);
+  const u = undoable(podId);
   return db.prepare('SELECT * FROM cmd_life_log WHERE pod_id = ? ORDER BY id DESC LIMIT ?').all(podId, limit).map(r => {
     let txt = r.text;
     if (r.kind === 'life') txt = `${nm(r.pid)}: ${sg(r.delta)} ${Math.abs(r.delta) === 1 ? 'vida' : 'vidas'} (${r.before_v} → ${r.after_v})`;
     else if (r.kind === 'poison') txt = `${nm(r.pid)}: ${sg(r.delta)} veneno (${r.before_v} → ${r.after_v})`;
     else if (r.kind === 'cmd') txt = `${nm(r.pid)}: ${sg(r.delta)} de comandante de ${nm(Math.abs(r.from_id))}${r.from_id < 0 ? ' (2º comandante)' : ''} (${r.before_v} → ${r.after_v}; vidas ${r.life_after})`;
-    return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, turn: r.turn_n && ['life', 'poison', 'cmd', 'kill'].includes(r.kind) ? `Vuelta ${r.turn_n} · turno de ${nm(r.turn_pid)}` : '', undone: !!r.undone, canUndo: ['life', 'poison', 'cmd'].includes(r.kind) && !r.undone };
+    return { id: r.id, at: r.at, updated: r.updated_at, by: r.by_id ? nm(r.by_id) : '', kind: r.kind, txt, turn: r.turn_n && ['life', 'poison', 'cmd', 'kill'].includes(r.kind) ? `Vuelta ${r.turn_n} · turno de ${nm(r.turn_pid)}` : '', undone: !!r.undone, canUndo: !!u && r.id === u.id };
   });
 }
 
@@ -163,8 +172,8 @@ function apply(eventId, podId, byId, body) {
       case 'dual': { const p = P(body.pid); p.dual = !!Number(body.on); log(p.dual ? `${p.name} juega con dos comandantes` : `${p.name} juega con un comandante`); break; }
       // Deshacer un apunte del historial (el último de vidas, veneno o comandante que no esté deshecho)
       case 'undo': {
-        const r = db.prepare("SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND kind IN ('life','poison','cmd') ORDER BY id DESC LIMIT 1").get(podId);
-        if (!r) throw new LifeError('No hay nada que deshacer');
+        const r = undoable(podId);
+        if (!r) throw new LifeError('No hay nada más que deshacer en este turno');
         if (body.id && Number(body.id) !== r.id) throw new LifeError('Solo se puede deshacer el último cambio de vidas');
         const p = P(r.pid);
         if (p.out) throw new LifeError(`${p.name} está eliminado: usa «Deshacer» en su panel primero`);
@@ -173,6 +182,19 @@ function apply(eventId, podId, byId, body) {
         else { const k = cmdKey(r.from_id); p.cmd[k] = Math.max(0, (p.cmd[k] || 0) - r.delta); p.life += r.delta; }
         db.prepare('UPDATE cmd_life_log SET undone = 1 WHERE id = ?').run(r.id);
         log(`Deshecho: ${history(eventId, podId, 400).find(h => h.id === r.id).txt}`, 'undo', p.id);
+        break;
+      }
+      // Rehacer lo último que se deshizo (si después no se ha tocado nada ni se ha pasado turno)
+      case 'redo': {
+        const r = redoable(podId);
+        if (!r) throw new LifeError('No hay nada que rehacer');
+        const p = P(r.pid);
+        if (p.out) throw new LifeError(`${p.name} está eliminado`);
+        if (r.kind === 'life') p.life += r.delta;
+        else if (r.kind === 'poison') p.poison = Math.max(0, p.poison + r.delta);
+        else { const k = cmdKey(r.from_id); p.cmd[k] = Math.max(0, (p.cmd[k] || 0) + r.delta); p.life -= r.delta; }
+        db.prepare('UPDATE cmd_life_log SET undone = 0 WHERE id = ?').run(r.id);
+        log(`Rehecho: ${history(eventId, podId, 400).find(h => h.id === r.id).txt}`, 'redo', p.id);
         break;
       }
       case 'kill': {

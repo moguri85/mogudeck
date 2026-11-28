@@ -127,6 +127,12 @@
     const e = { kind, pid: p.id, from: from || 0, d, before: after - d, after, canUndo: true, turn: tTag() };
     e.txt = htxt(e); hpush(e);
   }
+  // Deshacer / rehacer en casual: cambios de vidas, veneno y comandante desde el último «pasar turno» (el historial va del más nuevo al más viejo)
+  const CHGK = ['life', 'poison', 'cmd'];
+  function casUndoable() { for (const h of (st && st.hist) || []) { if (h.kind === 'turn') return null; if (CHGK.includes(h.kind) && !h.undone) return h; } return null; }
+  function casRedoable() { let c = null; for (const h of (st && st.hist) || []) { if (h.kind === 'turn') break; if (!CHGK.includes(h.kind)) continue; if (!h.undone) break; c = h; } return c; }
+  const canUndo = () => (CAS ? !!casUndoable() : !!(info && info.canUndo));
+  const canRedo = () => (CAS ? !!casRedoable() : !!(info && info.canRedo));
   function casualOp(b, prev) {
     const P = x => st.players.find(q => q.id === Number(x));
     const rd = b.rd != null ? Number(b.rd) : Number(b.d);
@@ -136,7 +142,7 @@
       case 'cmd': { const k = Number(b.slot) === 1 ? `${b.from}b` : String(b.from); track('cmd', P(b.pid), k, rd, P(b.pid).cmd[k] || 0); break; }
       case 'dual': hpush({ kind: 'note', txt: `${nameOf(b.pid)} juega con ${Number(b.on) ? 'dos comandantes' : 'un comandante'}` }); break;
       case 'undo': {
-        const h = (st.hist || []).find(x => x.canUndo);
+        const h = casUndoable();
         if (!h) break;
         const p = P(h.pid);
         if (h.kind === 'life') p.life -= h.d;
@@ -144,6 +150,17 @@
         else { p.cmd[h.from] = (p.cmd[h.from] || 0) - h.d; p.life += h.d; }
         h.canUndo = false; h.undone = true;
         hpush({ kind: 'undo', txt: `Deshecho: ${h.txt}` });
+        break;
+      }
+      case 'redo': {
+        const h = casRedoable();
+        if (!h) break;
+        const p = P(h.pid);
+        if (h.kind === 'life') p.life += h.d;
+        else if (h.kind === 'poison') p.poison += h.d;
+        else { p.cmd[h.from] = (p.cmd[h.from] || 0) + h.d; p.life -= h.d; }
+        h.canUndo = true; h.undone = false;
+        hpush({ kind: 'redo', txt: `Rehecho: ${h.txt}` });
         break;
       }
       case 'kill': { const v = P(b.pid); hpush({ kind: 'kill', pid: v.id, turn: tTag(), txt: b.killer ? `${nameOf(b.killer)} elimina a ${v.name}` : `${v.name} se rinde` }); break; }
@@ -617,7 +634,7 @@
     render();
   }
   function histView() {
-    const first = (hist || []).find(h => h.canUndo);
+    const first = CAS ? casUndoable() : (hist || []).find(h => h.canUndo);
     return `<div class="lf-sheet" role="dialog" aria-label="Historial de la mesa"><div class="lf-sh-in"><h2>Historial de la mesa</h2>
       <p class="small">Los toques seguidos sobre el mismo contador se juntan en un apunte (si das 5 y quitas 1, queda −4). Se guarda todo por si hay alguna duda.</p>
       ${!hist ? '<p>Cargando…</p>' : !hist.length ? '<p>Aún no hay cambios.</p>' : `<ol class="lf-hist">${hist.map(h => `<li class="${h.undone ? 'undone' : ''} k-${h.kind}"><time>${hhmmss(h.updated || h.at)}</time><span>${esc(h.txt)}${h.turn ? `<small class="tn">${esc(h.turn)}</small>` : ''}</span><small class="by">${h.by ? esc(h.by) : ''}</small>
@@ -682,7 +699,7 @@
         ${clockTxt() ? `<time class="lf-clock ${clockTxt().over ? 'over' : ''}" data-rc title="Tiempo de ronda">${clockTxt().t}</time>` : ''}
         <i class="lf-live" title="En directo"></i>
         ${arrange ? '<button data-arr-reset>Como al principio</button><button data-arr-done class="hot">Listo</button>'
-        : `${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${lapMode() && canPlay && timeOver() && !st.sudden ? `<button data-sudden="1" data-newturn="1" class="hot" ${lapDone() ? '' : 'disabled title="Se puede cuando juegue el último de la vuelta"'}>Muerte súbita</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
+        : `${canPlay ? `<button data-undo-last class="ur" aria-label="Deshacer" title="Deshacer (hasta el último pasar turno)" ${canUndo() ? '' : 'disabled'}>↶</button><button data-redo class="ur" aria-label="Rehacer" title="Rehacer" ${canRedo() ? '' : 'disabled'}>↷</button>` : ''}${canPlay ? (st.turn ? '<button data-pass class="go">Pasar turno</button>' : '<button data-turns>Turnos</button>') : ''}${exOn('day') ? `<button data-daynight class="dn">${st.day === 'night' ? '☾ Noche' : st.day === 'day' ? '☀ Día' : 'Día/noche'}</button>` : ''}${lapMode() && canPlay && timeOver() && !st.sudden ? `<button data-sudden="1" data-newturn="1" class="hot" ${lapDone() ? '' : 'disabled title="Se puede cuando juegue el último de la vuelta"'}>Muerte súbita</button>` : ''}${!CAS && canPlay ? `<button data-judge class="${info.judge ? 'hot' : ''}">${info.judge ? 'Juez avisado' : 'Juez'}</button>` : ''}<button data-hist>Historial</button>${CAS ? '<button data-reset>Reiniciar</button>' : ''}<button data-menu aria-expanded="${menu}">Opciones</button>`}</div>
       ${menu ? `<div class="lf-menu"><button data-arrange>Colocar jugadores</button><button data-exsheet>Contadores extra</button><button data-dice>Dados y moneda</button>${canPlay ? `<button data-turns>${st.turn ? 'Corregir el turno' : 'Empezar turnos'}</button>` : ''}<button data-turn>${turnPref ? 'Usar en vertical' : 'Usar apaisado'}</button>${document.fullscreenEnabled ? '<button data-full>Pantalla completa</button>' : ''}<button data-rot>${rot ? 'No girar los de enfrente' : 'Girar los de enfrente'}</button>
         ${canPlay && !st.sudden ? '<button data-sudden="1" class="hot">Muerte súbita</button>' : ''}${mine() && !st.done && !CAS ? '<button data-reset class="danger">Reiniciar contador</button>' : ''}${st.done && mine() && !info.reported ? '<button data-reopen>Reabrir la mesa</button>' : ''}
         ${installEv ? '<button data-install>Instalar como app</button>' : ''}${CAS ? `<button data-new>Cambiar jugadores</button>${room ? '<button data-roomsh>Compartir partida (código)</button>' : '<button data-share-room>Compartir con otros móviles</button>'}` : '<button data-whoami>Cambiar quién soy</button>'}
@@ -805,6 +822,8 @@
     on('[data-hist]', () => { hist = []; render(); loadHist(); });
     on('[data-close-hist]', () => { hist = null; render(); });
     on('[data-undo]', b => act({ op: 'undo', id: b.dataset.undo }).then(loadHist));
+    on('[data-undo-last]', () => { if (canUndo()) act({ op: 'undo' }).then(() => { if (hist) loadHist(); }); });
+    on('[data-redo]', () => { if (canRedo()) act({ op: 'redo' }).then(() => { if (hist) loadHist(); }); });
     on('[data-pick-art]', b => { const p = st.players.find(x => x.id === artSheet); const url = b.dataset.pickArt;
       act({ op: 'art', pid: p.id, art: url }, () => { p.art = url || null; p.artOff = !url; }); });
     root.querySelectorAll('.lf-sheet [data-op]').forEach(b => { b.onclick = () => {

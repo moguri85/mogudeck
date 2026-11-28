@@ -1882,3 +1882,6 @@ h3.aday { text-transform: none; letter-spacing: 0; font: 600 17px var(--display)
 .bracket.tv .bk-col:not(:last-child) .bk-m::after, .bracket.tv .bk-col:not(:first-child) .bk-m::before { width: 1.5vw; border-color: #3a3a3a; }
 .bracket.tv .bk-col:not(:last-child) .bk-m::after { right: -1.5vw; } .bracket.tv .bk-col:not(:first-child) .bk-m::before { left: -1.5vw; }
 .bk-m small { position: static; display: block; padding: 0 12px 8px; } .bracket.tv .bk-m small { position: static; padding: 0 1.2vw .8vh; }
+/* Contador: deshacer / rehacer */
+.lf-bar button.ur { min-width: 40px; padding: 6px 10px; font: 700 19px/1 var(--font); }
+.lf-bar button.ur:disabled { opacity: .35; cursor: default; }
