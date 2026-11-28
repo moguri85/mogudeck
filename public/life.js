@@ -129,8 +129,9 @@
   }
   // Deshacer / rehacer en casual: cambios de vidas, veneno y comandante desde el último «pasar turno» (el historial va del más nuevo al más viejo)
   const CHGK = ['life', 'poison', 'cmd'];
-  function casUndoable() { for (const h of (st && st.hist) || []) { if (h.kind === 'turn') return null; if (CHGK.includes(h.kind) && !h.undone) return h; } return null; }
-  function casRedoable() { let c = null; for (const h of (st && st.hist) || []) { if (h.kind === 'turn') break; if (!CHGK.includes(h.kind)) continue; if (!h.undone) break; c = h; } return c; }
+  // También se puede deshacer el último «pasar turno» (uno solo: ese es el límite)
+  function casUndoable() { for (const h of (st && st.hist) || []) { if (h.kind === 'turn') return !h.undone && h.data ? h : null; if (CHGK.includes(h.kind) && !h.undone) return h; } return null; }
+  function casRedoable() { let c = null; for (const h of (st && st.hist) || []) { if (h.kind === 'turn') { if (h.undone && h.data) c = h; break; } if (!CHGK.includes(h.kind)) continue; if (!h.undone) break; c = h; } return c; }
   const canUndo = () => (CAS ? !!casUndoable() : !!(info && info.canUndo));
   const canRedo = () => (CAS ? !!casRedoable() : !!(info && info.canRedo));
   function casualOp(b, prev) {
@@ -144,6 +145,13 @@
       case 'undo': {
         const h = casUndoable();
         if (!h) break;
+        if (h.kind === 'turn') {
+          const dt = h.data;
+          st.turn = dt.prevTurn ? { ...dt.prevTurn } : null;
+          if (dt.stat) { const t = (st.tstats || {})[dt.stat.pid]; if (t) { t.n = Math.max(0, t.n - 1); t.ms = Math.max(0, t.ms - dt.stat.ms); } }
+          h.undone = true; hpush({ kind: 'undo', txt: `Deshecho: ${h.txt}` });
+          break;
+        }
         const p = P(h.pid);
         if (h.kind === 'life') p.life -= h.d;
         else if (h.kind === 'poison') p.poison -= h.d;
@@ -155,6 +163,13 @@
       case 'redo': {
         const h = casRedoable();
         if (!h) break;
+        if (h.kind === 'turn') {
+          const dt = h.data;
+          st.turn = { ...dt.nextTurn, at: Date.now() };
+          if (dt.stat) { st.tstats = st.tstats || {}; const t = st.tstats[dt.stat.pid] = st.tstats[dt.stat.pid] || { n: 0, ms: 0, max: 0 }; t.n++; t.ms += dt.stat.ms; }
+          h.undone = false; hpush({ kind: 'redo', txt: `Rehecho: ${h.txt}` });
+          break;
+        }
         const p = P(h.pid);
         if (h.kind === 'life') p.life += h.d;
         else if (h.kind === 'poison') p.poison += h.d;
@@ -179,15 +194,16 @@
         break;
       case 'sudden': hpush({ kind: 'note', txt: st.sudden ? 'Muerte súbita activada' : 'Muerte súbita quitada' }); break;
       case 'turn': {
-        let txt = '';
+        let txt = '', stat = null;
         if (prev && !b.pid) {
           const ms = Date.now() - prev.at;
+          stat = { pid: prev.pid, ms };
           st.tstats = st.tstats || {};
           const t = st.tstats[prev.pid] = st.tstats[prev.pid] || { n: 0, ms: 0, max: 0 };
           t.n++; t.ms += ms; t.max = Math.max(t.max, ms);
           txt = ` (${nameOf(prev.pid)} tardó ${mmss(ms)})`;
         }
-        hpush({ kind: 'turn', txt: `Vuelta ${st.turn.lap || 1}: turno de ${nameOf(st.turn.pid)}${txt}` });
+        hpush({ kind: 'turn', txt: `Vuelta ${st.turn.lap || 1}: turno de ${nameOf(st.turn.pid)}${txt}`, data: { prevTurn: prev || null, stat, nextTurn: { ...st.turn } } });
         break;
       }
       case 'lap': hpush({ kind: 'note', txt: `Vuelta corregida: ${st.turn.lap}` }); break;
@@ -410,7 +426,7 @@
   // Deshacer y rehacer a los lados del botón del centro
   function centerUndo() {
     if (!mine() || arrange || raffle || st.done) return '';
-    return `<button class="lf-cur undo" style="${cpPos()}" data-undo-last aria-label="Deshacer" title="Deshacer (hasta el último pasar turno)" ${canUndo() ? '' : 'disabled'}>↶</button>`
+    return `<button class="lf-cur undo" style="${cpPos()}" data-undo-last aria-label="Deshacer" title="Deshacer (como mucho, el último pasar turno)" ${canUndo() ? '' : 'disabled'}>↶</button>`
       + `<button class="lf-cur redo" style="${cpPos()}" data-redo aria-label="Rehacer" title="Rehacer" ${canRedo() ? '' : 'disabled'}>↷</button>`;
   }
   function centerPass(rotd) {

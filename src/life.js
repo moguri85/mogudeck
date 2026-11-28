@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS cmd_kills (
 addColumn('cmd_events', 'life_auto', 'INTEGER DEFAULT 0');
 addColumn('cmd_life_log', 'turn_pid', 'INTEGER');
 addColumn('cmd_life_log', 'turn_n', 'INTEGER');
+addColumn('cmd_life_log', 'data', 'TEXT'); // lo necesario para deshacer un «pasar turno»
 addColumn('cmd_events', 'life_start', 'INTEGER DEFAULT 40');
 addColumn('cmd_events', 'combo_lap', 'INTEGER DEFAULT 6');
 // Combos: permitidos desde el turno combo_lap del jugador combo_seat de la vuelta (p. ej. turno 5 del 3º jugador) y con qué nombre se enseñan
@@ -74,13 +75,20 @@ function view(eventId, podId) {
   return { version: x.version, state: x.state, reported: !!x.pod.reported, proposed: !!x.pod.proposed_at, table: x.pod.table_number, round: x.pod.rnum, auto: !!x.ev.life_auto, now: Date.now(), timerEnd: x.pod.timer_end, comboLap: x.ev.combo_lap ?? 5, comboSeat: x.ev.combo_seat || 1, comboLabel: x.ev.combo_label || 'Combos de 3 o más cartas', turnWarn: x.ev.turn_warn ?? 5,
     extraTurns: x.ev.extra_turns ?? 5, timeMode: x.ev.time_mode || 'lap', judge: judgeOpen(podId), canUndo: !!undoable(podId), canRedo: !!redoable(podId) };
 }
-// Deshacer / rehacer: solo los cambios de vidas, veneno y comandante desde el último «pasar turno»
+// Deshacer / rehacer: los cambios de vidas, veneno y comandante desde el último «pasar turno», y ese «pasar turno» (uno solo; más atrás no)
 const CHG = "kind IN ('life','poison','cmd')";
-const lastTurnId = podId => (db.prepare("SELECT MAX(id) m FROM cmd_life_log WHERE pod_id = ? AND kind = 'turn'").get(podId) || {}).m || 0;
-function undoable(podId) { return db.prepare(`SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND ${CHG} AND id > ? ORDER BY id DESC LIMIT 1`).get(podId, lastTurnId(podId)) || null; }
+const lastTurn = podId => db.prepare("SELECT id, undone, data FROM cmd_life_log WHERE pod_id = ? AND kind = 'turn' ORDER BY id DESC LIMIT 1").get(podId) || null;
+function undoable(podId) {
+  const t = lastTurn(podId);
+  const c = db.prepare(`SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND ${CHG} AND id > ? ORDER BY id DESC LIMIT 1`).get(podId, t ? t.id : 0);
+  if (c) return c;
+  return t && !t.undone && t.data ? db.prepare('SELECT * FROM cmd_life_log WHERE id = ?').get(t.id) : null;
+}
 function redoable(podId) {
-  const lastOk = (db.prepare(`SELECT MAX(id) m FROM cmd_life_log WHERE pod_id = ? AND undone = 0 AND ${CHG}`).get(podId) || {}).m || 0;
-  return db.prepare(`SELECT * FROM cmd_life_log WHERE pod_id = ? AND undone = 1 AND ${CHG} AND id > ? ORDER BY id ASC LIMIT 1`).get(podId, Math.max(lastOk, lastTurnId(podId))) || null;
+  const t = lastTurn(podId), from = t ? t.id : 0;
+  const inSet = `pod_id = ? AND id >= ? AND (${CHG} OR (kind = 'turn' AND id = ?))`;
+  const lastOk = (db.prepare(`SELECT MAX(id) m FROM cmd_life_log WHERE ${inSet} AND undone = 0`).get(podId, from, from) || {}).m || 0;
+  return db.prepare(`SELECT * FROM cmd_life_log WHERE ${inSet} AND undone = 1 AND id > ? ORDER BY id ASC LIMIT 1`).get(podId, from, from, lastOk) || null;
 }
 const cmdKey = fromId => (fromId < 0 ? `${-fromId}b` : String(fromId));
 const EXK = { tax: 'impuesto de comandante', energy: 'energía', exp: 'experiencia' };
@@ -116,7 +124,7 @@ function trackChange(podId, byId, kind, pid, fromId, before, after, lifeAfter) {
 }
 function note(podId, byId, kind, pid, text) {
   const now = Date.now();
-  db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, text, at, updated_at, turn_pid, turn_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(podId, byId, kind, pid || null, text, now, now, curTurn ? curTurn.pid : null, curTurn ? (curTurn.lap || curTurn.n) : null);
+  return Number(db.prepare('INSERT INTO cmd_life_log (pod_id, by_id, kind, pid, text, at, updated_at, turn_pid, turn_n) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(podId, byId, kind, pid || null, text, now, now, curTurn ? curTurn.pid : null, curTurn ? (curTurn.lap || curTurn.n) : null).lastInsertRowid);
 }
 function history(eventId, podId, limit = 300) {
   const x = load(eventId, podId, false);
@@ -146,7 +154,7 @@ function apply(eventId, podId, byId, body) {
     const nm = id => (state.players.find(q => q.id === Number(id)) || {}).name || '—';
     curTurn = state.turn || null;
     if (!state.startedAt) state.startedAt = Date.now();
-    const log = (txt, kind = 'note', pid = null) => { state.log.unshift({ at: Date.now(), by: byId, txt }); state.log = state.log.slice(0, 40); note(podId, byId, kind, pid, txt); };
+    const log = (txt, kind = 'note', pid = null) => { state.log.unshift({ at: Date.now(), by: byId, txt }); state.log = state.log.slice(0, 40); return note(podId, byId, kind, pid, txt); };
     switch (body.op) {
       case 'life': {
         const p = P(body.pid); if (p.out) throw new LifeError(`${p.name} ya está eliminado`);
@@ -173,8 +181,18 @@ function apply(eventId, podId, byId, body) {
       // Deshacer un apunte del historial (el último de vidas, veneno o comandante que no esté deshecho)
       case 'undo': {
         const r = undoable(podId);
-        if (!r) throw new LifeError('No hay nada más que deshacer en este turno');
-        if (body.id && Number(body.id) !== r.id) throw new LifeError('Solo se puede deshacer el último cambio de vidas');
+        if (!r) throw new LifeError('No hay nada más que deshacer');
+        if (body.id && Number(body.id) !== r.id) throw new LifeError('Solo se puede deshacer el último cambio');
+        if (r.kind === 'turn') { // deshacer «pasar turno»: vuelve el turno de antes (y su tiempo sigue contando)
+          const dt = JSON.parse(r.data);
+          state.turn = dt.prevTurn ? { ...dt.prevTurn } : null;
+          if (dt.stat) { const t = (state.tstats || {})[dt.stat.pid]; if (t) { t.n = Math.max(0, t.n - 1); t.ms = Math.max(0, t.ms - dt.stat.ms); } }
+          state.ot = dt.prevOt || null;
+          curTurn = state.turn;
+          db.prepare('UPDATE cmd_life_log SET undone = 1 WHERE id = ?').run(r.id);
+          log(`Deshecho: ${r.text}`, 'undo', null);
+          break;
+        }
         const p = P(r.pid);
         if (p.out) throw new LifeError(`${p.name} está eliminado: usa «Deshacer» en su panel primero`);
         if (r.kind === 'life') p.life -= r.delta;
@@ -188,6 +206,16 @@ function apply(eventId, podId, byId, body) {
       case 'redo': {
         const r = redoable(podId);
         if (!r) throw new LifeError('No hay nada que rehacer');
+        if (r.kind === 'turn') {
+          const dt = JSON.parse(r.data);
+          state.turn = { ...dt.nextTurn, at: Date.now() };
+          if (dt.stat) { state.tstats = state.tstats || {}; const t = state.tstats[dt.stat.pid] = state.tstats[dt.stat.pid] || { n: 0, ms: 0, max: 0 }; t.n++; t.ms += dt.stat.ms; }
+          state.ot = dt.nextOt || null;
+          curTurn = state.turn;
+          db.prepare('UPDATE cmd_life_log SET undone = 0 WHERE id = ?').run(r.id);
+          log(`Rehecho: ${r.text}`, 'redo', null);
+          break;
+        }
         const p = P(r.pid);
         if (p.out) throw new LifeError(`${p.name} está eliminado`);
         if (r.kind === 'life') p.life += r.delta;
@@ -242,9 +270,11 @@ function apply(eventId, podId, byId, body) {
         else { const i = all.findIndex(q => q.id === prev.pid); next = [...all.slice(i + 1), ...all.slice(0, i + 1)].find(q => !q.out); }
         if (next.out) throw new LifeError(`${next.name} está eliminado`);
         const now = Date.now();
-        let txt = '';
+        let txt = '', stat = null;
+        const prevOt = state.ot || null;
         if (prev) {
           const ms = now - prev.at, pp = P(prev.pid);
+          stat = { pid: prev.pid, ms };
           state.tstats = state.tstats || {};
           const t = state.tstats[prev.pid] = state.tstats[prev.pid] || { n: 0, ms: 0, max: 0 };
           t.n++; t.ms += ms; t.max = Math.max(t.max, ms);
@@ -257,7 +287,8 @@ function apply(eventId, podId, byId, body) {
         // Se acabó el tiempo de ronda: a partir de aquí se cuentan los turnos extra
         if (prev && !body.pid && !state.ot && pod.timer_end && new Date(pod.timer_end).getTime() <= now) { state.ot = { base: prev.n }; txt += ' · tiempo cumplido, empiezan los turnos extra'; }
         curTurn = state.turn;
-        log(`Vuelta ${lap}: turno de ${next.name}${txt}`, 'turn', next.id);
+        const lid = log(`Vuelta ${lap}: turno de ${next.name}${txt}`, 'turn', next.id);
+        db.prepare('UPDATE cmd_life_log SET data = ? WHERE id = ?').run(JSON.stringify({ prevTurn: prev || null, prevOt, stat, nextTurn: state.turn, nextOt: state.ot || null }), lid);
         break;
       }
       case 'lap': { // corregir la vuelta a mano
